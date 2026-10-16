@@ -52,8 +52,8 @@ def to_compose(topo: Topology) -> str:
             svc["command"] = node.command
         if node.privileged:
             svc["privileged"] = True
-        if node.router:
-            svc["sysctls"] = {"net.ipv4.ip_forward": "1"}
+        if deployer.node_sysctls(node):
+            svc["sysctls"] = deployer.node_sysctls(node)
         env = {e.key: e.value for e in node.env if e.key}
         if env:
             svc["environment"] = env
@@ -67,7 +67,7 @@ def to_compose(topo: Topology) -> str:
             key = "nat" if i["net"] == "bridge" else i["seg"]
             nat_needed |= key == "nat"
             ep = {"driver_opts": {deployer.IFNAME_OPT: i["ifname"]}}
-            if i["link"] and plan.get((node.id, i["link"])):
+            if i["link"] and node.set_addresses and plan.get((node.id, i["link"])):
                 ep["ipv4_address"] = plan[(node.id, i["link"])].split("/")[0]
             nets[key] = ep
         if nets:

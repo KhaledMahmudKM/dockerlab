@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background, BackgroundVariant, ConnectionMode, Controls, ReactFlow,
-  addEdge, useEdgesState, useNodesState, useReactFlow,
+  addEdge, useEdgesState, useNodesInitialized, useNodesState, useReactFlow,
 } from "@xyflow/react";
 import { api, engineHost, openConsole, openVmConsole } from "./api.js";
 import { CableEdge, ContainerNode, NoteNode, RuntimeContext, SwitchNode, cableSlots } from "./canvas.jsx";
@@ -52,6 +52,8 @@ function toTopology(name, nodes, edges, description = "") {
       ports: data.ports, volumes: data.volumes, env: data.env,
       internet: data.internet, router: data.router, privileged: data.privileged,
       startup: data.startup ?? "", interfaces: data.interfaces || 0,
+      ifname_first: data.ifname_first ?? "", nat_ifname: data.nat_ifname ?? "",
+      set_addresses: data.set_addresses !== false, sysctls: data.sysctls ?? [],
     })),
     links: edges.map((e) => ({
       id: e.id, source: e.source, target: e.target, subnet: e.data?.subnet ?? "",
@@ -130,7 +132,13 @@ export default function App() {
   };
   const importInput = useRef(null);
   const savedSnap = useRef(JSON.stringify(toTopology("", [], [], "")));  // last saved/loaded state
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
+  // fit an opened lab in the view, once its boxes have been measured
+  const nodesReady = useNodesInitialized();
+  const fitPending = useRef(false);
+  useEffect(() => {
+    if (nodesReady && fitPending.current) { fitPending.current = false; fitView({ maxZoom: 1, padding: 0.06 }); }
+  }, [nodesReady, fitView]);
 
 
   // ---- engine + images
@@ -286,7 +294,8 @@ export default function App() {
       return [...ns, {
         id: uid("n"), type: "container", position: { x: pos.x - 80, y: pos.y - 30 },
         data: { name: `${base}-${i}`, image, command: "", ports: [], volumes: [], env: [],
-                internet: false, router: false, privileged: false, startup: "", interfaces: 0 },
+                internet: false, router: false, privileged: false, startup: "", interfaces: 0,
+                ifname_first: "", nat_ifname: "", set_addresses: true, sysctls: [] },
       }];
     });
   }, [screenToFlowPosition, setNodes]);
@@ -450,6 +459,7 @@ export default function App() {
   const loadLab = async (name) => {
     const t = await api.getLab(name);
     const { nodes: n, edges: e } = fromTopology(t);
+    fitPending.current = true;
     setNodes(n); setEdges(e); setLabName(name); setSavedName(name); setDescription(t.description ?? ""); labImages.current = t.images ?? {};
     resetRuntime(); savedSnap.current = snap(n, e, t.description ?? "");
     say("info", `Opened ${name}.`);
@@ -488,6 +498,7 @@ export default function App() {
       if (!(await leaveCurrent(name))) { say("ok", `Imported ${name}. Open it from Open….`); return; }
       const t = await api.getLab(name);
       const { nodes: n, edges: e } = fromTopology(t);
+      fitPending.current = true;
       setNodes(n); setEdges(e); setLabName(name); setSavedName(name); setDescription(t.description ?? ""); labImages.current = t.images ?? {};
       resetRuntime(); savedSnap.current = snap(n, e, t.description ?? "");
       const missing = r.data.missing ?? [];

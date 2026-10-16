@@ -1,0 +1,32 @@
+{
+  "name": "01-console",
+  "description": "One Linux container (Alpine Linux) with internet access: a first look at a container, and a place to try Linux and network commands.\n\n## Try it\n1. **Deploy**, then click **linux** and press **Console**.\n2. Look around:\n   ```\n   hostname\n   cat /etc/os-release\n   ip -br addr\n   ip route\n   ```\n3. Reach the internet:\n   ```\n   ping -c 3 1.1.1.1\n   dig example.com\n   curl -I https://example.com\n   ```\n4. Install a program with Alpine's package manager, and use it:\n   ```\n   apk add nano\n   nano /tmp/hello.txt\n   ```\n5. See what runs, and which ports listen: `ps` and `ss -tlnu`.\n\n> [!NOTE]\n> `nat0` is the container's link to the Docker host's network; Docker NATs it to the internet through the host. Everything you install or change is kept when the container stops and starts again, and lost when it's removed (*Remove containers*, or a Redeploy).\n\n## Questions\n- [ ] What's the container's address on `nat0`, and its default gateway? Which machine is that gateway?\n- [ ] Why does the shell prompt show *linux*?\n- [ ] After *Stop all* and *Start all*, is `nano` still installed? And after *Remove containers* and *Deploy*?\n",
+  "nodes": [
+    {
+      "id": "linux",
+      "name": "linux",
+      "image": "dockerlab/host:latest",
+      "x": 300,
+      "y": 160,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [],
+  "links": [],
+  "notes": [],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}

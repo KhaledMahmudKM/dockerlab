@@ -1,0 +1,151 @@
+{
+  "name": "15-load-balancer",
+  "description": "One address, several servers: **lb** (nginx) receives the web requests and shares them between **web1** and **web2**.\n\n| Container | Address on `192.168.70.0/24` (switch **lan**) | Role |\n|---|---|---|\n| lb | `192.168.70.2`, plus port 8080 of the Docker host | load balancer (reverse proxy) |\n| web1 | `192.168.70.11` | web server |\n| web2 | `192.168.70.12` | web server |\n| pc | `192.168.70.50` | client |\n\n## Try it\n1. **Deploy**. Click **lb** and open its *Port mappings* link (`http://<Docker host>:8080`). Reload a few times: the page comes from web1, then web2.\n2. In pc's **Console**:\n   ```\n   for i in 1 2 3 4 5 6; do curl -s http://192.168.70.2 | grep h1; done\n   curl -sI http://192.168.70.2 | grep X-Served-By\n   ```\n3. **Stop** web1 (click it, then Stop) and run the loop again. Then **Start** it.\n4. Capture the **web2–lan** cable while loading the page in your browser: which address does web2 see the request coming from?\n5. In lb's console, change the configuration (`vi /etc/nginx/conf.d/default.conf`), check it, and reload:\n   ```\n   nginx -t\n   nginx -s reload\n   ```\n   Try `server 192.168.70.11 weight=3;`, or `ip_hash;` as the first line in `upstream web`.\n\n> [!NOTE]\n> lb's startup commands write the configuration at every start, so edits made in the console are lost when it restarts. Put the ones you keep in its startup commands.\n\n## Questions\n- [ ] What does the browser see as the server's address? And web1?\n- [ ] With `ip_hash`, why do all your requests go to the same server?\n- [ ] How does lb know web1 is down, and what does a user notice?\n",
+  "nodes": [
+    {
+      "id": "lb",
+      "name": "lb",
+      "image": "dockerlab/nginx:latest",
+      "x": 250,
+      "y": 40,
+      "command": "",
+      "ports": [
+        {
+          "host": 8080,
+          "container": 80,
+          "proto": "tcp"
+        }
+      ],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# nginx as a load balancer: requests go to web1 and web2 in turn\ncat > /etc/nginx/conf.d/default.conf <<'CONF'\nupstream web {\n    server 192.168.70.11;\n    server 192.168.70.12;\n}\nserver {\n    listen 80;\n    location / {\n        proxy_pass http://web;\n        proxy_connect_timeout 2s;      # give up quickly on a server that's down, and try the next\n        add_header X-Served-By $upstream_addr always;\n    }\n}\nCONF\n# nginx starts with the container; wait for it, then load the new configuration\nfor i in 1 2 3 4 5 6 7 8 9 10; do [ -s /run/nginx.pid ] && break; sleep 1; done\nnginx -s reload\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "web1",
+      "name": "web1",
+      "image": "dockerlab/web:latest",
+      "x": 20,
+      "y": 460,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# The web page\ncat > /var/www/index.html <<HTML\n<!doctype html>\n<title>$(hostname)</title>\n<h1>Hello from $(hostname)</h1>\n<p>web1, behind the load balancer.</p>\nHTML\n\n# The web server: BusyBox httpd on port 80, serving /var/www\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "web2",
+      "name": "web2",
+      "image": "dockerlab/web:latest",
+      "x": 480,
+      "y": 460,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# The web page\ncat > /var/www/index.html <<HTML\n<!doctype html>\n<title>$(hostname)</title>\n<h1>Hello from $(hostname)</h1>\n<p>web2, behind the load balancer.</p>\nHTML\n\n# The web server: BusyBox httpd on port 80, serving /var/www\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc",
+      "name": "pc",
+      "image": "dockerlab/host:latest",
+      "x": 560,
+      "y": 160,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "lan",
+      "name": "lan",
+      "x": 260,
+      "y": 280,
+      "subnet": "192.168.70.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-lb-lan",
+      "source": "lb",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.70.2",
+      "target_ip": ""
+    },
+    {
+      "id": "c-web1-lan",
+      "source": "web1",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.70.11",
+      "target_ip": ""
+    },
+    {
+      "id": "c-web2-lan",
+      "source": "web2",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.70.12",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc-lan",
+      "source": "pc",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.70.50",
+      "target_ip": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "n1",
+      "x": 0,
+      "y": 40,
+      "w": 220,
+      "h": 90,
+      "text": "Browser → Docker host :8080\n→ lb → web1 / web2",
+      "color": "blue"
+    }
+  ],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n",
+    "dockerlab/web:latest": "FROM alpine:latest\n\n# A small web server (BusyBox httpd), plus the end-host tools: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache busybox-extras iproute2 tcpdump bind-tools curl iputils\nRUN mkdir -p /var/www\n",
+    "dockerlab/nginx:latest": "FROM nginx:alpine\n\n# nginx (web server, reverse proxy, load balancer), plus the network tools\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}

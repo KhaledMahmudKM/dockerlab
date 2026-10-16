@@ -1,0 +1,107 @@
+{
+  "name": "14-dns",
+  "description": "Names instead of addresses: **dns** answers for the zone `lab.test`, and forwards other names to a public DNS server.\n\n| Container | Address on `192.168.60.0/24` (switch **lan**) | Name |\n|---|---|---|\n| dns | `192.168.60.53`, plus `nat0` (to forward queries) | `ns.lab.test` |\n| www | `192.168.60.80` | `www.lab.test`, `web.lab.test` (an alias) |\n| pc | `192.168.60.10` | uses dns as its DNS server |\n\n## Try it\n1. **Deploy**. In pc's **Console**:\n   ```\n   cat /etc/resolv.conf\n   dig www.lab.test\n   dig web.lab.test\n   curl http://www.lab.test\n   ```\n2. A name that doesn't exist, and one from the internet:\n   ```\n   dig nothere.lab.test\n   dig example.com\n   curl -I https://example.com\n   ```\n   The name resolves, but the page doesn't load. Why?\n3. Click the **pc–lan** cable and **Capture** while you run `dig www.lab.test`: one UDP packet to port 53, one back.\n4. In dns's console, watch the queries arrive: `tail -f /var/log/dnsmasq.log`.\n5. Add a name: in dns's startup commands, add `--host-record=mail.lab.test,192.168.60.25 \\` under the `www` line, then **Stop** and **Start** dns and `dig mail.lab.test` from pc.\n\n> [!NOTE]\n> `ping www` works in any DockerLab lab without DNS, because DockerLab writes the containers' names into `/etc/hosts`. That's why this lab uses names under `lab.test`, which only the DNS server knows.\n\n## Questions\n- [ ] Look at `dig`'s output: which section holds the answer, and what's the TTL?\n- [ ] Why does `dig example.com` work for pc, which has no internet access?\n- [ ] What's the difference between `www.lab.test`'s A record and `web.lab.test`'s CNAME?\n",
+  "nodes": [
+    {
+      "id": "dns",
+      "name": "dns",
+      "image": "dockerlab/gateway:latest",
+      "x": 40,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": false,
+      "privileged": false,
+      "startup": "# A DNS server for the zone lab.test (dnsmasq); other names are forwarded to 1.1.1.1\npkill -x dnsmasq 2>/dev/null\ndnsmasq --interface=eth0 --bind-interfaces --no-hosts --no-resolv --server=1.1.1.1 \\\n  --local=/lab.test/ \\\n  --host-record=ns.lab.test,192.168.60.53 \\\n  --host-record=www.lab.test,192.168.60.80 \\\n  --cname=web.lab.test,www.lab.test \\\n  --log-queries --log-facility=/var/log/dnsmasq.log\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "www",
+      "name": "www",
+      "image": "dockerlab/web:latest",
+      "x": 460,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# The web page\ncat > /var/www/index.html <<HTML\n<!doctype html>\n<title>$(hostname)</title>\n<h1>Hello from $(hostname)</h1>\n<p>You reached www.lab.test by name, through the lab's DNS server.</p>\nHTML\n\n# The web server: BusyBox httpd on port 80, serving /var/www\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc",
+      "name": "pc",
+      "image": "dockerlab/host:latest",
+      "x": 250,
+      "y": 440,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# Use the lab's DNS server, and try names in lab.test first\nprintf 'nameserver 192.168.60.53\\nsearch lab.test\\n' > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "lan",
+      "name": "lan",
+      "x": 260,
+      "y": 250,
+      "subnet": "192.168.60.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-dns-lan",
+      "source": "dns",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.60.53",
+      "target_ip": ""
+    },
+    {
+      "id": "c-www-lan",
+      "source": "www",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.60.80",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc-lan",
+      "source": "pc",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.60.10",
+      "target_ip": ""
+    }
+  ],
+  "notes": [],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n",
+    "dockerlab/web:latest": "FROM alpine:latest\n\n# A small web server (BusyBox httpd), plus the end-host tools: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache busybox-extras iproute2 tcpdump bind-tools curl iputils\nRUN mkdir -p /var/www\n",
+    "dockerlab/gateway:latest": "FROM alpine:latest\n\n# A home-router style gateway: NAT (iptables) plus DHCP and DNS (dnsmasq), and the usual network tools\nRUN apk add --no-cache dnsmasq iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n"
+  }
+}

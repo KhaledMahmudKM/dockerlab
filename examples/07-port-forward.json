@@ -1,5 +1,5 @@
 {
-  "name": "example-web",
+  "name": "07-port-forward",
   "description": "A small office LAN: **gw** connects it to the internet and forwards web requests from outside to the web server on **pc1**.\n\n| Container | Address on LAN `10.0.10.0/24` (switch *lan*) |\n|---|---|\n| gw | `10.0.10.1` |\n| pc1 (web server) | `10.0.10.10` |\n| pc2 | `10.0.10.20` |\n\n## Try it\n1. **Deploy**, then open a console on pc2 and run:\n   ```\n   curl http://10.0.10.10\n   ```\n2. From your PC's browser, open `http://<Docker host>:8080` (click gw: the *Port mappings* section has the link). The request reaches gw, which forwards it to pc1.\n3. From pc2, go out through gw's NAT:\n   ```\n   ping -c 3 1.1.1.1\n   curl -I https://example.com\n   ```\n4. Capture the **gw–lan** cable while loading the page from your PC: the destination is `10.0.10.10`, not gw. On gw, see the NAT rules counting packets:\n   ```\n   iptables -t nat -L -n -v\n   ```\n\n## Questions\n- [ ] Why does the web page answer on port 8080 of the Docker host, but port 80 on pc1?\n- [ ] What address does pc1 see the browser's requests coming from? Why isn't it gw's?\n- [ ] Remove the default route on pc1 (`ip route del default`). Which tests still work, and why?\n",
   "nodes": [
     {

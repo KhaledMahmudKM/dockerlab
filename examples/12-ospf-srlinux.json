@@ -1,0 +1,312 @@
+{
+  "name": "12-ospf-srlinux",
+  "description": "The OSPF ring of lab 11 with **Nokia SR Linux** routers: the same network, configured the way a data-centre switch is.\n\n| Router | LAN | to the next router | to the previous router |\n|---|---|---|---|\n| r1 | `ethernet-1/1` `192.168.1.1/24` | `ethernet-1/2` `10.0.12.1/24` → r2 | `ethernet-1/3` `10.0.13.1/24` → r3 |\n| r2 | `ethernet-1/1` `192.168.2.1/24` | `ethernet-1/3` `10.0.23.2/24` → r3 | `ethernet-1/2` `10.0.12.2/24` → r1 |\n| r3 | `ethernet-1/1` `192.168.3.1/24` | `ethernet-1/3` `10.0.13.3/24` → r1 | `ethernet-1/2` `10.0.23.3/24` → r2 |\n\npc1, pc2 and pc3 are `192.168.1.10`, `192.168.2.10` and `192.168.3.10`, on switches sw1, sw2 and sw3. Each PC's default gateway is its router's `.1`.\n\n> [!IMPORTANT]\n> SR Linux is a full network operating system: the image is about 2.5 GB, each router takes a minute or two to boot, and each uses over 1 GB of memory. Give the Docker host (GNS3 VM) at least 8 GB of RAM and 4 vCPUs for this lab.\n\nIn this lab, SR Linux configures its own interfaces, so DockerLab only names them (`e1-1` is SR Linux's `ethernet-1/1`) and leaves them without addresses. See *Network OS* in a router's settings.\n\n## Before you start\n**Deploy**, wait a couple of minutes, then open a router's **Console** and start SR Linux's CLI:\n```\nsr_cli\n```\nIf it says the system isn't ready, wait a little and try again. `show interface brief` lists the interfaces.\n\n## Configure interfaces and OSPF\nIn `sr_cli`, enter candidate mode, set the configuration, and commit. On **r1**:\n```\nenter candidate\nset / interface ethernet-1/1 admin-state enable\nset / interface ethernet-1/1 subinterface 0 ipv4 admin-state enable\nset / interface ethernet-1/1 subinterface 0 ipv4 address 192.168.1.1/24\nset / interface ethernet-1/2 admin-state enable\nset / interface ethernet-1/2 subinterface 0 ipv4 admin-state enable\nset / interface ethernet-1/2 subinterface 0 ipv4 address 10.0.12.1/24\nset / interface ethernet-1/3 admin-state enable\nset / interface ethernet-1/3 subinterface 0 ipv4 admin-state enable\nset / interface ethernet-1/3 subinterface 0 ipv4 address 10.0.13.1/24\nset / network-instance default type default\nset / network-instance default admin-state enable\nset / network-instance default interface ethernet-1/1.0\nset / network-instance default interface ethernet-1/2.0\nset / network-instance default interface ethernet-1/3.0\nset / network-instance default protocols ospf instance default admin-state enable\nset / network-instance default protocols ospf instance default version ospf-v2\nset / network-instance default protocols ospf instance default router-id 1.1.1.1\nset / network-instance default protocols ospf instance default area 0.0.0.0 interface ethernet-1/1.0 passive true\nset / network-instance default protocols ospf instance default area 0.0.0.0 interface ethernet-1/2.0 interface-type point-to-point\nset / network-instance default protocols ospf instance default area 0.0.0.0 interface ethernet-1/3.0 interface-type point-to-point\ncommit now\n```\nDo **r2** and **r3** the same way, with their addresses from the table and router-ids `2.2.2.2` and `3.3.3.3`.\n\n> [!TIP]\n> The configuration is saved with `save startup`, and comes back when the router stops and starts. A Redeploy starts from the factory configuration.\n\n## Verify\n1. In `sr_cli` on each router:\n   ```\n   show network-instance default protocols ospf neighbor\n   show network-instance default route-table ipv4-unicast summary\n   ping 192.168.3.10 network-instance default -c 3\n   ```\n2. From pc1: `ping -c 3 192.168.2.10` and `traceroute -n 192.168.3.10`.\n3. Capture the **r1–r2** cable: the OSPF hellos look the same as FRR's in lab 11.\n\n## Questions\n- [ ] Compare the FRR and SR Linux configurations. What does SR Linux's *network-instance* correspond to in FRR?\n- [ ] SR Linux applies nothing until `commit`. What's the advantage over FRR, where each line takes effect at once?\n- [ ] Shut ethernet-1/3 on r1 (`set / interface ethernet-1/3 admin-state disable`, then `commit now`). How does traffic from pc1 reach pc3 now?\n",
+  "nodes": [
+    {
+      "id": "r1",
+      "name": "r1",
+      "image": "ghcr.io/nokia/srlinux:25.10.4",
+      "x": 60,
+      "y": 330,
+      "command": "sudo bash -c /opt/srlinux/bin/sr_linux",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": false,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "e1-1",
+      "nat_ifname": "eth0",
+      "set_addresses": false,
+      "sysctls": [
+        {
+          "key": "net.ipv4.ip_forward",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.disable_ipv6",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.accept_dad",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.default.accept_dad",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.autoconf",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.default.autoconf",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "r2",
+      "name": "r2",
+      "image": "ghcr.io/nokia/srlinux:25.10.4",
+      "x": 520,
+      "y": 330,
+      "command": "sudo bash -c /opt/srlinux/bin/sr_linux",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": false,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "e1-1",
+      "nat_ifname": "eth0",
+      "set_addresses": false,
+      "sysctls": [
+        {
+          "key": "net.ipv4.ip_forward",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.disable_ipv6",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.accept_dad",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.default.accept_dad",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.autoconf",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.default.autoconf",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "r3",
+      "name": "r3",
+      "image": "ghcr.io/nokia/srlinux:25.10.4",
+      "x": 290,
+      "y": 40,
+      "command": "sudo bash -c /opt/srlinux/bin/sr_linux",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": false,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "e1-1",
+      "nat_ifname": "eth0",
+      "set_addresses": false,
+      "sysctls": [
+        {
+          "key": "net.ipv4.ip_forward",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.disable_ipv6",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.accept_dad",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.default.accept_dad",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.all.autoconf",
+          "value": "0"
+        },
+        {
+          "key": "net.ipv6.conf.default.autoconf",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/host:latest",
+      "x": 0,
+      "y": 760,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r1 is the way out of this LAN\nip route replace default via 192.168.1.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 600,
+      "y": 760,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r2 is the way out of this LAN\nip route replace default via 192.168.2.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc3",
+      "name": "pc3",
+      "image": "dockerlab/host:latest",
+      "x": 620,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r3 is the way out of this LAN\nip route replace default via 192.168.3.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "sw1",
+      "name": "sw1",
+      "x": 70,
+      "y": 590,
+      "subnet": "192.168.1.0/24"
+    },
+    {
+      "id": "sw2",
+      "name": "sw2",
+      "x": 530,
+      "y": 590,
+      "subnet": "192.168.2.0/24"
+    },
+    {
+      "id": "sw3",
+      "name": "sw3",
+      "x": 620,
+      "y": 230,
+      "subnet": "192.168.3.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-r1-sw1",
+      "source": "r1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r2-sw2",
+      "source": "r2",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r3-sw3",
+      "source": "r3",
+      "target": "sw3",
+      "subnet": "",
+      "source_ip": "192.168.3.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r1-r2",
+      "source": "r1",
+      "target": "r2",
+      "subnet": "10.0.12.0/24",
+      "source_ip": "10.0.12.1",
+      "target_ip": "10.0.12.2"
+    },
+    {
+      "id": "c-r2-r3",
+      "source": "r2",
+      "target": "r3",
+      "subnet": "10.0.23.0/24",
+      "source_ip": "10.0.23.2",
+      "target_ip": "10.0.23.3"
+    },
+    {
+      "id": "c-r3-r1",
+      "source": "r3",
+      "target": "r1",
+      "subnet": "10.0.13.0/24",
+      "source_ip": "10.0.13.3",
+      "target_ip": "10.0.13.1"
+    },
+    {
+      "id": "c-pc1-sw1",
+      "source": "pc1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2-sw2",
+      "source": "pc2",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc3-sw3",
+      "source": "pc3",
+      "target": "sw3",
+      "subnet": "",
+      "source_ip": "192.168.3.10",
+      "target_ip": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "n1",
+      "x": -190,
+      "y": 20,
+      "w": 450,
+      "h": 80,
+      "text": "r1  e1-1 192.168.1.1  ·  e1-2 10.0.12.1  ·  e1-3 10.0.13.1\nr2  e1-1 192.168.2.1  ·  e1-2 10.0.12.2  ·  e1-3 10.0.23.2\nr3  e1-1 192.168.3.1  ·  e1-2 10.0.23.3  ·  e1-3 10.0.13.3",
+      "color": "yellow"
+    }
+  ],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}

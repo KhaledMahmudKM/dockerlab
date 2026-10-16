@@ -154,7 +154,7 @@ body.resizing { cursor: ns-resize; user-select: none; }
 .field:last-child { margin-bottom: 0; }
 .field input { color: var(--ink); }
 .toggle { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; cursor: pointer; }
-.toggle input { margin-top: 3px; accent-color: var(--ink); }
+.toggle input { flex: none; margin-top: 3px; accent-color: var(--ink); }
 .toggle span { display: grid; }
 .toggle small { color: var(--ink-3); font-size: 12px; }
 .rows .row { margin-bottom: 6px; }
@@ -568,3 +568,12 @@ button.primary.attention::after { content: ""; position: absolute; top: -4px; ri
 .host-pane > .engine { padding: 4px 16px 0; color: var(--ink-2); font-size: 13px; }
 .host-pane > .host-actions { display: flex; gap: 6px; margin: 6px 0 10px 33px; }
 .host-pane > .host-actions .mini { padding: 2px 8px; font-size: 12.5px; }
+
+/* Network OS section of a container */
+.netos summary { cursor: pointer; list-style: revert; }
+.netos summary h3 { display: inline; margin: 0; }
+.netos[open] summary { margin-bottom: 6px; }
+.netos h4 { margin: 10px 0 4px; font-size: 13px; color: var(--ink-2); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row2 .field { margin-bottom: 0; }
+.row2 + .hint { margin-top: 6px; }

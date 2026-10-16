@@ -35,7 +35,7 @@ import docker
 from docker.errors import APIError, NotFound
 from docker.types import EndpointConfig, IPAMConfig, IPAMPool
 
-from models import Link, Node, Switch, Topology
+from models import Link, Node, Switch, Topology, ifname_series
 
 LABEL = "dockerlab.lab"
 CARRIER_POOL = ipaddress.ip_network("100.64.0.0/10")   # Docker's side only; never seen in a lab
@@ -110,6 +110,12 @@ def config_hash(topo: Topology, node: Node) -> str:
     return hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()[:12]
 
 
+def node_sysctls(node: Node) -> dict:
+    out = {"net.ipv4.ip_forward": "1"} if node.router else {}
+    out.update({e.key: e.value for e in node.sysctls if e.key})
+    return out
+
+
 def supports_ifname(client: docker.DockerClient) -> bool:
     """Docker 28 (API 1.48) added the endpoint `ifname` driver option."""
     try:
@@ -122,14 +128,15 @@ def supports_ifname(client: docker.DockerClient) -> bool:
 def interfaces(topo: Topology, node: Node) -> list[dict]:
     """The planned interfaces of a node, in order: {net, ifname, ip, link, seg}."""
     out = []
+    name = ifname_series(node.ifname_first)
     if node.internet or node.ports:
-        out.append({"net": "bridge", "ifname": "nat0", "ip": "", "link": None, "seg": None})
+        out.append({"net": "bridge", "ifname": node.nat_ifname or "nat0", "ip": "", "link": None, "seg": None})
     i = 0
     for l in topo.links:
         if node.id in (l.source, l.target):
             ip = l.source_ip if node.id == l.source else l.target_ip
             seg = segment(topo, l)
-            out.append({"net": network_name(topo.name, seg), "ifname": f"eth{i}", "ip": ip,
+            out.append({"net": network_name(topo.name, seg), "ifname": name(i), "ip": ip,
                         "link": l.id, "seg": seg.id})
             i += 1
     return out
@@ -196,6 +203,11 @@ def validate(topo: Topology) -> list[str]:
         if n.interfaces and used > n.interfaces:
             errors.append(f"{n.name} has {n.interfaces} interface{'s' if n.interfaces != 1 else ''} but "
                           f"{used} cables. Raise its Interfaces setting or remove a cable.")
+        names = [i["ifname"] for i in interfaces(topo, n)]
+        dup = sorted({x for x in names if names.count(x) > 1})
+        if dup:
+            errors.append(f"{n.name}: two interfaces would both be named {', '.join(dup)}. "
+                          "Change its NAT interface name or its first interface name.")
     for sw_id, ports in plugged.items():
         sw = switches[sw_id]
         cids = [c for c, _ in ports]
@@ -327,6 +339,9 @@ def _carriers(client, count: int) -> list[str]:
 
 IP_SCRIPT = r"""
 command -v ip >/dev/null 2>&1 || exit 127
+ARPING=""
+if command -v arping >/dev/null 2>&1; then ARPING=arping
+elif busybox --list 2>/dev/null | grep -qx arping; then ARPING="busybox arping"; fi
 fix() {
   for i in /sys/class/net/*; do
     [ "$(cat "$i/address" 2>/dev/null)" = "$1" ] || continue
@@ -334,6 +349,9 @@ fix() {
     ip -f inet addr flush dev "$IF"
     [ -n "$2" ] && ip addr add "$2" dev "$IF"
     ip link set "$IF" up
+    # A restarted container has new MAC addresses: tell the neighbours (gratuitous ARP),
+    # or they keep sending to the old one until their ARP cache times out
+    [ -n "$2" ] && [ -n "$ARPING" ] && ($ARPING -q -U -c 2 -I "$IF" "${2%/*}" >/dev/null 2>&1 &)
   done
 }
 """
@@ -363,8 +381,10 @@ def apply_addresses(client, topo: Topology, node_ids=None) -> list[str]:
     plan = addressing(topo)
     nodes = {n.id: n for n in topo.nodes}
     host_lines = []
-    for (node_id, _), cidr in plan.items():
-        if cidr and node_id in nodes:
+    fixed = {(l.source, l.id) for l in topo.links if l.source_ip} | {(l.target, l.id) for l in topo.links if l.target_ip}
+    for (node_id, link_id), cidr in plan.items():
+        # a node that gets its addresses elsewhere (DHCP) is listed only where its address is fixed
+        if cidr and node_id in nodes and (nodes[node_id].set_addresses or (node_id, link_id) in fixed):
             line = f"{cidr.split('/')[0]} {nodes[node_id].name} # dockerlab"
             if line not in host_lines:
                 host_lines.append(line)
@@ -378,11 +398,13 @@ def apply_addresses(client, topo: Topology, node_ids=None) -> list[str]:
         calls = []
         for i in interfaces(topo, node):
             if i["link"] and i["net"] in nets:
-                calls.append(f"fix {shlex.quote(nets[i['net']].get('MacAddress', ''))} {shlex.quote(plan.get((node.id, i['link']), ''))}")
+                # a network OS sets its own addresses: only remove Docker's carrier address
+                addr = plan.get((node.id, i["link"]), "") if node.set_addresses else ""
+                calls.append(f"fix {shlex.quote(nets[i['net']].get('MacAddress', ''))} {shlex.quote(addr)}")
         if not calls:
             return None
         script = IP_SCRIPT + "\n".join(calls) + "\n"
-        res = c.exec_run(["sh", "-c", hosts + script])
+        res = c.exec_run(["sh", "-c", (hosts if node.set_addresses else "") + script])
         if res.exit_code == 127:            # no `ip` in this image: set them from a helper container
             try:
                 helper = _helper_image(client)
@@ -482,7 +504,7 @@ def deploy(client: docker.DockerClient, topo: Topology) -> dict:
             ports={f"{p.container}/{p.proto}": p.host for p in node.ports} or None,
             volumes={v.source: {"bind": v.target, "mode": v.mode} for v in node.volumes} or None,
             cap_add=["NET_ADMIN", "NET_RAW"], privileged=node.privileged,
-            sysctls={"net.ipv4.ip_forward": "1"} if node.router else None,
+            sysctls=node_sysctls(node) or None,
             tty=True, stdin_open=True,   # keeps shell-only images (alpine, ubuntu) alive
         )
         if node.command.strip():
@@ -627,6 +649,12 @@ def state(client: docker.DockerClient, topo: Topology) -> dict:
         node = nodes.get(node_id)
         lab_ip = {i["net"]: plan.get((node_id, i["link"]), "") for i in interfaces(topo, node)
                   if i["link"]} if node else {}
+        if node and not node.set_addresses:
+            # it gets its addresses elsewhere (DHCP, a network OS): show only fixed ones, which
+            # are what it's meant to be configured with; Docker's carrier address means nothing
+            fixed = {l.id: (l.source_ip if l.source == node_id else l.target_ip) for l in topo.links}
+            lab_ip = {i["net"]: (fixed.get(i["link"]) or "") and plan.get((node_id, i["link"]), "")
+                      for i in interfaces(topo, node) if i["link"]}
 
         def addr(n, v):    # the lab's address on lab networks (Docker only knows the carrier one)
             if n in lab_ip:

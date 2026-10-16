@@ -1,0 +1,86 @@
+{
+  "name": "03-web-volume",
+  "description": "A web site kept in a Docker **volume**, so it outlives the containers that serve it.\n\nThe volume **dockerlab-site** holds the site's files and is mounted at `/var/www` in both containers:\n\n| Container | Mount | Published as |\n|---|---|---|\n| web | read-write | `http://<Docker host>:8080` |\n| web-ro | read-only | `http://<Docker host>:8081` |\n\n## Try it\n1. **Deploy** and open both addresses (click a container: *Port mappings* has the link). Both show the same page.\n2. In web's **Console**, change the page, then reload both browser tabs:\n   ```\n   vi /var/www/index.html\n   ```\n3. Try the same in web-ro's console: the file system is read-only there.\n   ```\n   echo test > /var/www/test.html\n   ```\n4. **Remove containers**, then **Deploy** again: the containers are new, the page you edited is still there.\n5. On the Docker host (**Console** in the Docker Host pane), find where the volume lives:\n   ```\n   docker volume ls\n   docker volume inspect dockerlab-site\n   sudo ls -l /var/lib/docker/volumes/dockerlab-site/_data\n   ```\n\n> [!NOTE]\n> A volume is removed only on purpose (`docker volume rm dockerlab-site` on the Docker host). Removing the lab's containers keeps it, which is the point.\n\n## Questions\n- [ ] Compare with lab 02: why does this page survive *Remove containers* and that one doesn't?\n- [ ] Where would you keep a database's files in a containerised application? Why?\n- [ ] What's the difference between a named volume and a host path (bind mount), such as `/home/gns3/site:/var/www`?\n",
+  "nodes": [
+    {
+      "id": "web",
+      "name": "web",
+      "image": "dockerlab/web:latest",
+      "x": 120,
+      "y": 200,
+      "command": "",
+      "ports": [
+        {
+          "host": 8080,
+          "container": 80,
+          "proto": "tcp"
+        }
+      ],
+      "volumes": [
+        {
+          "source": "dockerlab-site",
+          "target": "/var/www",
+          "mode": "rw"
+        }
+      ],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# The first page, only if the site has none yet (the volume keeps your edits)\n[ -f /var/www/index.html ] || cat > /var/www/index.html <<HTML\n<!doctype html>\n<title>$(hostname)</title>\n<h1>Hello from $(hostname)</h1>\n<p>This site lives in the Docker volume <b>dockerlab-site</b>. Edit it in web's console: /var/www/index.html</p>\nHTML\n\n# The web server: BusyBox httpd on port 80, serving /var/www\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "web-ro",
+      "name": "web-ro",
+      "image": "dockerlab/web:latest",
+      "x": 470,
+      "y": 200,
+      "command": "",
+      "ports": [
+        {
+          "host": 8081,
+          "container": 80,
+          "proto": "tcp"
+        }
+      ],
+      "volumes": [
+        {
+          "source": "dockerlab-site",
+          "target": "/var/www",
+          "mode": "ro"
+        }
+      ],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# Serve the same volume, mounted read-only\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [],
+  "links": [],
+  "notes": [
+    {
+      "id": "n1",
+      "x": 120,
+      "y": 40,
+      "w": 560,
+      "h": 90,
+      "text": "Volume dockerlab-site → /var/www in both\nweb: read-write, :8080      web-ro: read-only, :8081",
+      "color": "blue"
+    }
+  ],
+  "images": {
+    "dockerlab/web:latest": "FROM alpine:latest\n\n# A small web server (BusyBox httpd), plus the end-host tools: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache busybox-extras iproute2 tcpdump bind-tools curl iputils\nRUN mkdir -p /var/www\n"
+  }
+}

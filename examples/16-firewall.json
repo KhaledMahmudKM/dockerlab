@@ -1,0 +1,138 @@
+{
+  "name": "16-firewall",
+  "description": "A firewall between three zones: the **LAN** (trusted), the **DMZ** with a public web server, and the internet. You write the filtering rules with iptables.\n\n| Container | Address | Zone |\n|---|---|---|\n| fw | `192.168.1.1` (eth0, LAN), `172.16.0.1` (eth1, DMZ), plus `nat0` (internet) | all three |\n| pc | `192.168.1.10` | LAN |\n| web | `172.16.0.10` | DMZ, published as `http://<Docker host>:8080` |\n\n## Before you start\n**Deploy**. Everything is open: from pc, `ping -c 2 172.16.0.10`, `curl http://172.16.0.10` and `ping -c 2 1.1.1.1` work, and so does web → pc (`ping -c 2 192.168.1.10` in web's console). Open the web page from your browser too (click **fw**: *Port mappings*).\n\n## The policy\n1. The LAN may go anywhere.\n2. Anyone may reach the web server on port 80, nothing else in the DMZ.\n3. The DMZ may not open connections to the LAN, nor to the internet.\n\n## Configure\nIn fw's **Console**:\n```\n# Drop what isn't allowed\niptables -P FORWARD DROP\n\n# Replies to allowed connections\niptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n\n# 1. The LAN goes anywhere\niptables -A FORWARD -i eth0 -j ACCEPT\n\n# 2. Web traffic to the web server\niptables -A FORWARD -o eth1 -d 172.16.0.10 -p tcp --dport 80 -j ACCEPT\n\n# See the rules and their counters\niptables -L FORWARD -n -v --line-numbers\n```\n\n## Verify\n| Test | From | Expected |\n|---|---|---|\n| `curl http://172.16.0.10` | pc | works |\n| `ping -c 2 1.1.1.1` | pc | works |\n| `ping -c 2 192.168.1.10` | web | blocked |\n| `curl -I https://example.com` | web | blocked |\n| the page at `http://<Docker host>:8080` | your browser | works |\n\nWatch the counters change with `iptables -L FORWARD -n -v` as you test.\n\n> [!TIP]\n> To start over, **Stop** and **Start** fw: its startup commands reset the rules. Rules typed in the console are lost when it restarts; put the final ones in its startup commands.\n\n## Go further\n- [ ] Allow ping from the LAN to the DMZ, but not from the internet.\n- [ ] Log what's dropped: `iptables -A FORWARD -j LOG --log-prefix \"fw-drop: \"` (where must it go in the chain?). See it on the Docker host with `sudo dmesg | tail`.\n\n## Questions\n- [ ] Remove the ESTABLISHED,RELATED rule. Which tests fail, and why?\n- [ ] Web requests from your browser arrive at fw on port 8080, but rule 2 matches port 80. Why does it work?\n- [ ] Why is it safer to set the policy to DROP and allow what's needed than to block what's bad?\n",
+  "nodes": [
+    {
+      "id": "fw",
+      "name": "fw",
+      "image": "dockerlab/router:latest",
+      "x": 260,
+      "y": 40,
+      "command": "",
+      "ports": [
+        {
+          "host": 8080,
+          "container": 8080,
+          "proto": "tcp"
+        }
+      ],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": true,
+      "privileged": false,
+      "startup": "# NAT to the internet\nnat-on\n\n# Publish the web server: the Docker host's port 8080 reaches fw on nat0; send it on to web, port 80\niptables -t nat -C PREROUTING -i nat0 -p tcp --dport 8080 -j DNAT --to-destination 172.16.0.10:80 2>/dev/null \\\n  || iptables -t nat -A PREROUTING -i nat0 -p tcp --dport 8080 -j DNAT --to-destination 172.16.0.10:80\n\n# No filtering yet: that's the exercise. Start again from here:\niptables -P FORWARD ACCEPT\niptables -F FORWARD\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc",
+      "name": "pc",
+      "image": "dockerlab/host:latest",
+      "x": 20,
+      "y": 470,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# fw is the way out of this LAN\nip route replace default via 192.168.1.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "web",
+      "name": "web",
+      "image": "dockerlab/web:latest",
+      "x": 500,
+      "y": 470,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# fw is the way out of this LAN\nip route replace default via 172.16.0.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n\n# The web page\ncat > /var/www/index.html <<HTML\n<!doctype html>\n<title>$(hostname)</title>\n<h1>Hello from $(hostname)</h1>\n<p>The DMZ web server, published through the firewall.</p>\nHTML\n\n# The web server: BusyBox httpd on port 80, serving /var/www\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "lan",
+      "name": "lan",
+      "x": 40,
+      "y": 280,
+      "subnet": "192.168.1.0/24"
+    },
+    {
+      "id": "dmz",
+      "name": "dmz",
+      "x": 490,
+      "y": 280,
+      "subnet": "172.16.0.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-fw-lan",
+      "source": "fw",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.1.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-fw-dmz",
+      "source": "fw",
+      "target": "dmz",
+      "subnet": "",
+      "source_ip": "172.16.0.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc-lan",
+      "source": "pc",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.1.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-web-dmz",
+      "source": "web",
+      "target": "dmz",
+      "subnet": "",
+      "source_ip": "172.16.0.10",
+      "target_ip": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "n1",
+      "x": 560,
+      "y": 40,
+      "w": 270,
+      "h": 110,
+      "text": "LAN 192.168.1.0/24: trusted\nDMZ 172.16.0.0/24: web server\nfw eth0 = LAN, eth1 = DMZ",
+      "color": "blue"
+    }
+  ],
+  "images": {
+    "dockerlab/router:latest": "FROM alpine:latest\n\n# Networking tools for a gateway or router\nRUN apk add --no-cache iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n",
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n",
+    "dockerlab/web:latest": "FROM alpine:latest\n\n# A small web server (BusyBox httpd), plus the end-host tools: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache busybox-extras iproute2 tcpdump bind-tools curl iputils\nRUN mkdir -p /var/www\n"
+  }
+}

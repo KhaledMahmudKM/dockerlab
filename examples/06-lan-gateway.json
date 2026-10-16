@@ -1,0 +1,106 @@
+{
+  "name": "06-lan-gateway",
+  "description": "A LAN with a gateway: two PCs on a switch reach each other directly, and the internet through **gw**, which NATs them.\n\n| Container | Address on `192.168.20.0/24` (switch **lan**) | Role |\n|---|---|---|\n| gw | `192.168.20.1`, plus `nat0` to the internet | default gateway, NAT |\n| pc1 | `192.168.20.11` | PC |\n| pc2 | `192.168.20.12` | PC |\n\n## Try it\n1. **Deploy**, then in pc1's **Console**:\n   ```\n   ping -c 3 pc2\n   ping -c 3 1.1.1.1\n   traceroute -n 1.1.1.1\n   curl -I https://example.com\n   ```\n2. Click the **gw–lan** cable and **Capture**: ping pc2 from pc1, then `1.1.1.1`. Only one of them shows up on this cable. Why?\n3. In pc2's console, remove its default route and test again:\n   ```\n   ip route del default\n   ping -c 3 pc1\n   ping -c 3 1.1.1.1\n   ```\n4. In gw's console, see the NAT rule counting packets: `iptables -t nat -L POSTROUTING -n -v`.\n\n## Questions\n- [ ] Which traffic goes through gw, and which doesn't? How does a PC decide?\n- [ ] Without a default route, what can pc2 still reach?\n- [ ] The PCs use `1.1.1.1` for DNS. Where do their DNS queries go, hop by hop?\n",
+  "nodes": [
+    {
+      "id": "gw",
+      "name": "gw",
+      "image": "dockerlab/router:latest",
+      "x": 240,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": true,
+      "privileged": false,
+      "startup": "# Masquerade everything leaving through nat0 (the way to the internet)\nnat-on\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/host:latest",
+      "x": 60,
+      "y": 420,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# gw is the way out of this LAN\nip route replace default via 192.168.20.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 420,
+      "y": 420,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# gw is the way out of this LAN\nip route replace default via 192.168.20.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "lan",
+      "name": "lan",
+      "x": 250,
+      "y": 250,
+      "subnet": "192.168.20.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-gw-lan",
+      "source": "gw",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.20.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc1-lan",
+      "source": "pc1",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.20.11",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2-lan",
+      "source": "pc2",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.20.12",
+      "target_ip": ""
+    }
+  ],
+  "notes": [],
+  "images": {
+    "dockerlab/router:latest": "FROM alpine:latest\n\n# Networking tools for a gateway or router\nRUN apk add --no-cache iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n",
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "name": "04-nat-gateway",
+  "description": "A PC behind a NAT gateway, as at home: **pc** has a private address and reaches the internet through **gw**, which rewrites (masquerades) its packets.\n\n| Container | Address | Role |\n|---|---|---|\n| gw | `192.168.1.1` on eth0, plus `nat0` to the internet | router with NAT |\n| pc | `192.168.1.10` | PC, default gateway `192.168.1.1` |\n\n## Try it\n1. **Deploy**, then in pc's **Console**:\n   ```\n   ip route\n   ping -c 3 1.1.1.1\n   traceroute -n 1.1.1.1\n   curl -I https://example.com\n   ```\n2. Click the **gw–pc** cable and **Capture** while pc pings `1.1.1.1`: the source is `192.168.1.10`.\n3. In gw's console, watch the same pings leave on `nat0`, from gw's own address:\n   ```\n   tcpdump -ni nat0 icmp\n   ```\n4. Look at the NAT rule and its counters, and the translations gw keeps:\n   ```\n   iptables -t nat -L POSTROUTING -n -v\n   cat /proc/net/nf_conntrack | grep icmp\n   ```\n5. Remove the NAT rule, test from pc again, then put it back:\n   ```\n   iptables -t nat -F POSTROUTING\n   nat-on\n   ```\n\n## Questions\n- [ ] Without the NAT rule, pc's pings still leave gw. Why don't the replies come back?\n- [ ] Which address does `example.com` see the request coming from?\n- [ ] Why does pc need a default route, but not a route to `192.168.1.0/24`?\n",
+  "nodes": [
+    {
+      "id": "gw",
+      "name": "gw",
+      "image": "dockerlab/router:latest",
+      "x": 140,
+      "y": 90,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": true,
+      "privileged": false,
+      "startup": "# Masquerade everything leaving through nat0 (the way to the internet)\nnat-on\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc",
+      "name": "pc",
+      "image": "dockerlab/host:latest",
+      "x": 140,
+      "y": 340,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# gw is the way out of this LAN\nip route replace default via 192.168.1.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [],
+  "links": [
+    {
+      "id": "c-gw-pc",
+      "source": "gw",
+      "target": "pc",
+      "subnet": "192.168.1.0/24",
+      "source_ip": "192.168.1.1",
+      "target_ip": "192.168.1.10"
+    }
+  ],
+  "notes": [
+    {
+      "id": "n1",
+      "x": 420,
+      "y": 90,
+      "w": 250,
+      "h": 100,
+      "text": "Internet ← nat0 (masquerade)\ngw 192.168.1.1\npc 192.168.1.10",
+      "color": "blue"
+    }
+  ],
+  "images": {
+    "dockerlab/router:latest": "FROM alpine:latest\n\n# Networking tools for a gateway or router\nRUN apk add --no-cache iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n",
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}

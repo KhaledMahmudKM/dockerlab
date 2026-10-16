@@ -1,0 +1,48 @@
+{
+  "name": "02-web-server",
+  "description": "A web server in a container, published on the Docker host: what *port mapping* does.\n\n**web** runs BusyBox httpd on port 80. Its port mapping publishes it as port **8080** of the Docker host.\n\n## Try it\n1. **Deploy**. Click **web**: under *Port mappings*, the link opens `http://<Docker host>:8080` in your browser.\n2. In web's **Console**, look at the server and its page:\n   ```\n   ss -tlnp\n   cat /var/www/index.html\n   curl -v http://localhost/\n   ```\n3. Change the page, then reload it in the browser:\n   ```\n   vi /var/www/index.html\n   ```\n4. On the Docker host (**Console** in the Docker Host pane), see how Docker publishes the port:\n   ```\n   docker ps --format '{{.Names}}  {{.Ports}}'\n   sudo iptables -t nat -L DOCKER -n\n   ```\n\n> [!TIP]\n> The page is rewritten by web's startup commands every time it starts. Edit the startup commands (click **web**) to change it for good.\n\n## Questions\n- [ ] The server listens on port 80. Why does the browser use 8080?\n- [ ] Two containers can both listen on port 80. Can both be published as 8080? Why?\n- [ ] What happens to your edit after *Stop all* and *Start all*? Why?\n",
+  "nodes": [
+    {
+      "id": "web",
+      "name": "web",
+      "image": "dockerlab/web:latest",
+      "x": 300,
+      "y": 160,
+      "command": "",
+      "ports": [
+        {
+          "host": 8080,
+          "container": 80,
+          "proto": "tcp"
+        }
+      ],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# The web page\ncat > /var/www/index.html <<HTML\n<!doctype html>\n<title>$(hostname)</title>\n<h1>Hello from $(hostname)</h1>\n<p>This page is served by BusyBox httpd in a container, published as port 8080 of the Docker host.</p>\nHTML\n\n# The web server: BusyBox httpd on port 80, serving /var/www\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [],
+  "links": [],
+  "notes": [
+    {
+      "id": "n1",
+      "x": 40,
+      "y": 30,
+      "w": 230,
+      "h": 80,
+      "text": "Browser → Docker host :8080\n→ web :80",
+      "color": "blue"
+    }
+  ],
+  "images": {
+    "dockerlab/web:latest": "FROM alpine:latest\n\n# A small web server (BusyBox httpd), plus the end-host tools: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache busybox-extras iproute2 tcpdump bind-tools curl iputils\nRUN mkdir -p /var/www\n"
+  }
+}

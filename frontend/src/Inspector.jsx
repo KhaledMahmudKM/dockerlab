@@ -201,6 +201,30 @@ function NodePanel({ node, update, onAction, onConsole, onDetails, images, log, 
           blank={{ key: "", value: "" }}
           fields={[{ k: "key", label: "Name" }, { k: "value", label: "Value" }]} />
       </section>
+
+      <section>
+        <details className="netos" open={!!(d.ifname_first || d.nat_ifname || d.set_addresses === false || d.sysctls?.length)}>
+          <summary><h3>Network OS</h3></summary>
+          <p className="hint">For router operating systems such as Nokia SR Linux, which expect their own interface names and configure their own addresses.</p>
+          <div className="row2">
+            <label className="field">First interface
+              <input value={d.ifname_first ?? ""} placeholder="eth0" spellCheck={false}
+                onChange={(e) => set("ifname_first")(e.target.value.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 15))} />
+            </label>
+            <label className="field">NAT interface
+              <input value={d.nat_ifname ?? ""} placeholder="nat0" spellCheck={false}
+                onChange={(e) => set("nat_ifname")(e.target.value.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 15))} />
+            </label>
+          </div>
+          <p className="hint">The cables' interfaces count up from the first name: <code>e1-1</code> gives e1-1, e1-2, … (SR Linux's ethernet-1/1, 1/2, …).</p>
+          <Toggle checked={d.set_addresses !== false} onChange={set("set_addresses")} label="DockerLab sets the addresses"
+            help="Off: its cable interfaces are left without addresses, for the network OS (or you) to configure. The bench still shows the planned ones." />
+          <h4>Kernel settings (sysctl)</h4>
+          <Rows rows={d.sysctls ?? []} onChange={set("sysctls")} addLabel="Add setting" empty="None."
+            blank={{ key: "net.", value: "" }}
+            fields={[{ k: "key", label: "Setting" }, { k: "value", label: "Value" }]} />
+        </details>
+      </section>
       <p className="hint pad">Settings apply the next time you deploy. Startup commands also apply on the next start.</p>
     </>
   );
@@ -363,14 +387,16 @@ function SwitchPanel({ sw, nodes, edges, update, updateEdge, onCapture, engine }
 function plannedIfaceText(node, nodes, edges) {
   const names = Object.fromEntries(nodes.map((n) => [n.id, n.data.name]));
   const list = [];
-  if (node.data.internet || node.data.ports?.length) list.push("nat0 (internet)");
+  const m = /^(.*?)(\d+)$/.exec(node.data.ifname_first || "eth0") ?? ["", "eth", "0"];
+  const ifn = (k) => `${m[1]}${Number(m[2]) + k}`;
+  if (node.data.internet || node.data.ports?.length) list.push(`${node.data.nat_ifname || "nat0"} (internet)`);
   let i = 0;
   for (const e of edges) {
     if (e.source === node.id || e.target === node.id) {
-      list.push(`eth${i++} to ${names[e.source === node.id ? e.target : e.source]}`);
+      list.push(`${ifn(i++)} to ${names[e.source === node.id ? e.target : e.source]}`);
     }
   }
-  for (; i < (node.data.interfaces || 0); i++) list.push(`eth${i} free`);
+  for (; i < (node.data.interfaces || 0); i++) list.push(`${ifn(i)} free`);
   return list.join(", ");
 }
 

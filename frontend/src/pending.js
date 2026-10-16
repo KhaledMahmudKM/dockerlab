@@ -18,6 +18,9 @@ function nodeView(n) {
     env: (n.env ?? []).map((e) => ({ key: e.key ?? "", value: e.value ?? "" })),
     internet: !!n.internet, router: !!n.router, privileged: !!n.privileged,
     interfaces: Number(n.interfaces) || 0,
+    ifname_first: (n.ifname_first ?? "").trim(), nat_ifname: (n.nat_ifname ?? "").trim(),
+    set_addresses: n.set_addresses !== false,
+    sysctls: (n.sysctls ?? []).map((e) => ({ key: e.key ?? "", value: e.value ?? "" })),
   };
 }
 

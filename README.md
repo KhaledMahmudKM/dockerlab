@@ -82,6 +82,7 @@ A lab's description is written in **Markdown** and shown formatted, so it can ho
 The example labs' descriptions show what it looks like.
 - **Configure a container:** click it to set its name, image, command, interfaces, startup commands, ports, volumes, environment and behaviour.
 - **Interfaces:** like a real router, a container can have a fixed number of cable interfaces, e.g. 4. The bench then refuses a fifth cable, the box shows *2 of 4 interfaces*, and the panel lists the free ones (`eth2 free`). Leave it empty for one interface per cable, with no limit. Changing it needs a Redeploy. The internet interface `nat0` isn't counted. Free interfaces exist only on the bench: inside the container, `ip a` shows only cabled ones.
+- **Network OS:** for router operating systems that expect their own interface names and set their own addresses, such as Nokia SR Linux. *First interface* names the cable interfaces (`e1-1` gives e1-1, e1-2, …; empty means eth0, eth1, …), *NAT interface* renames `nat0` (SR Linux's management port is `eth0`), *DockerLab sets the addresses* off leaves the cable interfaces unaddressed (also right for DHCP clients), and *Kernel settings* adds sysctls such as `net.ipv6.conf.all.disable_ipv6=0`. Lab `12-ospf-srlinux` uses all four.
 - **Configure a cable:** click it to set its subnet and, optionally, a fixed address for each end. Every address is usable, `.1` included.
 - **Configure a switch:** click it to set its name and subnet. Its *Ports* list shows every container plugged in, where you can set each one's address, see its interface and current IP, and capture its port. The lights on the switch show one port per cable, green while that container runs.
 - **Delete:** select and press Delete.
@@ -217,7 +218,7 @@ To open a web server (or any service) in a lab from your PC, publish its port: c
 - The service must listen on all interfaces (`0.0.0.0`) inside the container: published traffic arrives on `nat0`.
 - Each host port can be used once on the VM, across all labs. GNS3 itself uses port 80 or 3080 there, so pick 8080 and up.
 - **Changing the default route breaks it.** Docker forwards the request without changing its source address, so the container replies to your PC. If its startup commands send the default route into the lab (`ip route replace default via …`), the reply is lost. The panel warns about this and shows the fix: a route back to your PC's network through `nat0`, e.g. `ip route add 192.168.56.0/24 via 172.17.0.1 dev nat0`.
-- The realistic alternative is to publish the port on the lab's gateway and forward it to the server, as a home router does. The *example-web* lab does exactly this.
+- The realistic alternative is to publish the port on the lab's gateway and forward it to the server, as a home router does. The *07-port-forward* lab does exactly this.
 
 To reach it from other machines than your PC, which can't see the Host-only network, either forward a port on Windows (`netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=8080 connectaddress=192.168.56.103 connectport=8080`, plus a firewall rule allowing TCP 8080), or give the VM a Bridged adapter so it has an address on your LAN.
 
@@ -225,10 +226,28 @@ To reach it from other machines than your PC, which can't see the Host-only netw
 
 DockerLab comes with ready-made labs, listed under *Examples* in *Open…*. Opening one gives you your own copy, saved in your labs folder under the example's name, so you can change it freely; opening it again later asks whether to open your copy or start over from the original. Each carries the Dockerfiles of its images, so the first Deploy builds any it needs on the Docker host; that needs the VM's internet access and takes a minute or two.
 
+They're numbered in teaching order, from one container to routing protocols. Each description has the addressing, step-by-step tasks with the commands, and questions; the routing labs leave the configuration to the student, with instructions to do it and to verify it.
+
 | Lab | What it shows |
 |---|---|
-| `example-web` | A LAN behind a NAT gateway. `gw` (Router image) has internet access and forwards port 8080 of the Docker host to the web server on `pc1` (BusyBox httpd); `pc2` has `curl` to test it from inside. Its description lists exercises. |
-| `example-two-lans` | Routing between two LANs. `r-gw` joins LAN 1 (`sw1`) and LAN 2 (`sw2`) and NATs both to the internet. `lin-pc` on LAN 1 is a Linux desktop in the browser ([webtop](https://docs.linuxserver.io/images/docker-webtop), XFCE with Firefox), reached at `https://<Docker host>:3001` through a port forward on `r-gw`; `serv-www` on LAN 2 is a web server. The desktop image is about 1.5 GB, so the first Deploy takes a while; give the VM at least 4 GB of RAM and, for a smooth desktop, 4 vCPUs. |
+| `01-console` | One Linux container with internet access: a first look at a container and its console. |
+| `02-web-server` | A web server published on the Docker host's port 8080: port mapping. |
+| `03-web-volume` | A web site kept in a Docker volume, served by two containers (one read-only); it survives removing them. |
+| `04-nat-gateway` | A PC behind a NAT gateway, as at home: masquerading, seen from both sides. |
+| `05-switch-lan` | Two PCs on a switch: a LAN, ARP, and why the same subnet matters. |
+| `06-lan-gateway` | Two PCs on a switch and a gateway to the internet: what goes through the gateway, and what doesn't. |
+| `07-port-forward` | A LAN behind a gateway that forwards port 8080 of the Docker host to a web server inside (formerly *example-web*). |
+| `08-two-lans` | Two LANs joined by a router that also NATs both to the internet. |
+| `09-two-lans-desktop` | The same with a Linux desktop in the browser ([webtop](https://docs.linuxserver.io/images/docker-webtop), XFCE with Firefox) on LAN 1, reached at `https://<Docker host>:3001` (formerly *example-two-lans*). The desktop image is about 1.5 GB; give the VM at least 4 GB of RAM and, for a smooth desktop, 4 vCPUs. |
+| `10-static-routing` | Three FRR routers in a ring, each with a LAN; students configure static routes, then a backup route. |
+| `11-ospf` | The same ring; students configure OSPF, verify the adjacencies and routes, and break a link to watch it reroute. |
+| `12-ospf-srlinux` | The same ring with Nokia SR Linux routers, configured in SR Linux's CLI. The image is about 2.5 GB, and each router needs over 1 GB of memory: give the VM 8 GB. |
+| `13-dhcp` | A gateway that hands out addresses by DHCP (dnsmasq); students watch the DORA exchange and reserve an address. |
+| `14-dns` | A DNS server for the zone `lab.test` with A and CNAME records, forwarding other names. |
+| `15-load-balancer` | nginx sharing requests between two web servers, published on port 8080. |
+| `16-firewall` | A firewall between a LAN, a DMZ with a web server, and the internet; students write the iptables policy. |
+
+The images the labs build: *dockerlab/host* (end host tools), *dockerlab/router* (iptables and `nat-on`), *dockerlab/web* (BusyBox httpd), *dockerlab/gateway* (router plus dnsmasq), *dockerlab/frr* (FRRouting, privileged because FRR's daemons need it), *dockerlab/nginx*, *dockerlab/desktop*; lab 12 pulls `ghcr.io/nokia/srlinux`.
 
 ### Diagrams
 
@@ -255,9 +274,9 @@ Containers run with a TTY attached, so images whose default command is a shell (
 
 The bench shows each container's interfaces once deployed, e.g. `eth0  to pc1  10.0.1.3/24`. These are read from inside the running container, so they're correct even on an engine older than Docker 28.
 
-**Lab traffic and the Docker host's firewall.** Lab networks are Docker *internal* networks, and Docker's firewall drops packets on them whose source or destination is outside the subnet Docker knows for the network, which is the carrier subnet (see below), so that's every lab packet. That never matters unless the Docker host has *bridge netfilter* on (`net.bridge.bridge-nf-call-iptables = 1`); then nothing in a lab could talk. On every Deploy, DockerLab checks for this and, if needed, adds one rule on the Docker host that accepts traffic within its own bridges (named `dl…`): `iptables -I DOCKER-USER -i dl+ -o dl+ -j ACCEPT`. It uses the same SSH login as capture, and the sudo rule DockerLab offers when it first connects; if that's not possible, Deploy says so and shows the command to run yourself.
+**Lab traffic and the Docker host's firewall.** Lab networks are Docker *internal* networks, and Docker's firewall drops packets on them whose source or destination is outside the subnet Docker knows for the network, which is the carrier subnet (see below), so that's every lab packet. That never matters unless the Docker host has *bridge netfilter* on (`net.bridge.bridge-nf-call-iptables = 1`); then nothing in a lab could talk. On every Deploy, DockerLab checks for this and, if needed, adds two rules on the Docker host: one accepts traffic within its own bridges (named `dl…`), `iptables -I DOCKER-USER -i dl+ -o dl+ -j ACCEPT`, and one keeps that traffic out of Docker's NAT, `iptables -t nat -I POSTROUTING -o dl+ -j RETURN` (otherwise a connection from the Docker host itself to a published port, such as `curl localhost:8080` in its console, gets masqueraded inside the lab and its reply is lost). It uses the same SSH login as capture, and the sudo rule DockerLab offers when it first connects; if that's not possible, Deploy says so and shows the command to run yourself.
 
-**Lab addresses.** Each lab has its own address space: two labs can use the same subnets at the same time, and every address, `.1` included, is yours. Docker requires every network on the engine to have its own subnet, so DockerLab doesn't give it the lab's: each cable and switch gets a private *carrier* subnet from `100.64.0.0/10` that only Docker sees. After every container start (Deploy, Start, Restart), DockerLab replaces the carrier addresses inside the container with the lab's, using the image's `ip` command, or, for images without one, a small helper container (`alpine`) that shares the container's network. Cables and switches without a subnet get one of their own from `172.31.0.0/16`, and ends without a fixed address get the lowest free address of their subnet; both stay the same across redeploys.
+**Lab addresses.** Each lab has its own address space: two labs can use the same subnets at the same time, and every address, `.1` included, is yours. Docker requires every network on the engine to have its own subnet, so DockerLab doesn't give it the lab's: each cable and switch gets a private *carrier* subnet from `100.64.0.0/10` that only Docker sees. After every container start (Deploy, Start, Restart), DockerLab replaces the carrier addresses inside the container with the lab's, using the image's `ip` command, or, for images without one, a small helper container (`alpine`) that shares the container's network. Cables and switches without a subnet get one of their own from `172.31.0.0/16`, and ends without a fixed address get the lowest free address of their subnet; both stay the same across redeploys. Docker gives a restarted container new MAC addresses, so DockerLab then announces each address with a gratuitous ARP (if the image has `arping`, as BusyBox does), and neighbours update at once instead of after their ARP cache times out. Containers with *DockerLab sets the addresses* off only get the carrier addresses removed.
 
 **Names.** DockerLab also adds every node's name to each container's `/etc/hosts`, so `ping serv-www` works in any lab container, without DNS.
 

@@ -1,0 +1,121 @@
+{
+  "name": "08-two-lans",
+  "description": "Routing between two LANs: **gw** joins LAN 1 and LAN 2, routes between them, and NATs both to the internet.\n\n| Container | Address | LAN |\n|---|---|---|\n| gw | `192.168.1.1` (eth0), `192.168.2.1` (eth1), plus `nat0` | both |\n| pc1 | `192.168.1.10` | LAN 1, switch **sw1** |\n| pc2 | `192.168.2.10` | LAN 2, switch **sw2** |\n\n## Try it\n1. **Deploy**, then in pc1's **Console**:\n   ```\n   ping -c 3 192.168.2.10\n   traceroute -n 192.168.2.10\n   ping -c 3 1.1.1.1\n   ```\n2. In gw's console, look at its routing table, and at what makes it a router:\n   ```\n   ip route\n   cat /proc/sys/net/ipv4/ip_forward\n   ```\n3. Click the **gw–sw2** cable and **Capture** while pc1 pings pc2: the source is still `192.168.1.10`. Now capture while pc1 pings `1.1.1.1`, and run `tcpdump -ni nat0 icmp` on gw.\n4. Turn routing off on gw, test again, then turn it back on:\n   ```\n   echo 0 > /proc/sys/net/ipv4/ip_forward\n   echo 1 > /proc/sys/net/ipv4/ip_forward\n   ```\n5. Remove pc2's default route (`ip route del default` in pc2), and ping pc2 from pc1.\n\n## Questions\n- [ ] gw has no routes you configured. How does it know where `192.168.2.0/24` is?\n- [ ] Why does traffic between the LANs keep its source address, but traffic to the internet doesn't?\n- [ ] In step 5, pc1's pings reach pc2. Why do they still fail?\n",
+  "nodes": [
+    {
+      "id": "gw",
+      "name": "gw",
+      "image": "dockerlab/router:latest",
+      "x": 250,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": true,
+      "privileged": false,
+      "startup": "# Masquerade everything leaving through nat0 (the way to the internet)\nnat-on\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/host:latest",
+      "x": 40,
+      "y": 460,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# gw is the way out of this LAN\nip route replace default via 192.168.1.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 480,
+      "y": 460,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# gw is the way out of this LAN\nip route replace default via 192.168.2.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "sw1",
+      "name": "sw1",
+      "x": 60,
+      "y": 270,
+      "subnet": "192.168.1.0/24"
+    },
+    {
+      "id": "sw2",
+      "name": "sw2",
+      "x": 470,
+      "y": 270,
+      "subnet": "192.168.2.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-gw-sw1",
+      "source": "gw",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-gw-sw2",
+      "source": "gw",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc1-sw1",
+      "source": "pc1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2-sw2",
+      "source": "pc2",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.10",
+      "target_ip": ""
+    }
+  ],
+  "notes": [],
+  "images": {
+    "dockerlab/router:latest": "FROM alpine:latest\n\n# Networking tools for a gateway or router\nRUN apk add --no-cache iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n",
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}

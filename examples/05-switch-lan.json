@@ -1,0 +1,77 @@
+{
+  "name": "05-switch-lan",
+  "description": "Two PCs on one switch: a LAN, where hosts reach each other directly, without a router.\n\n| Container | Address on `192.168.10.0/24` (switch **sw1**) |\n|---|---|\n| pc1 | `192.168.10.11` |\n| pc2 | `192.168.10.12` |\n\n## Try it\n1. **Deploy**, then in pc1's **Console**:\n   ```\n   ip -br addr\n   ip route\n   ping -c 3 192.168.10.12\n   ping -c 3 pc2\n   ip neigh\n   ```\n2. Watch ARP: click the **pc1–sw1** cable and **Capture**, then in pc1:\n   ```\n   ip neigh flush all\n   ping -c 1 192.168.10.12\n   ```\n   Wireshark shows the ARP request (broadcast, *who has 192.168.10.12?*) and the reply before the ping.\n3. Compare MAC addresses: `ip link show eth0` on each PC, and the `ip neigh` table on the other.\n4. Move pc2 to another subnet, and try again from pc1:\n   ```\n   ip addr flush dev eth0\n   ip addr add 192.168.99.12/24 dev eth0\n   ```\n   (Run these in pc2's console. **Stop** and **Start** pc2 to get its lab address back.)\n\n> [!NOTE]\n> `ping pc2` works because DockerLab writes every container's name and address into `/etc/hosts`. Have a look: `cat /etc/hosts`.\n\n## Questions\n- [ ] Neither PC has a default route. Why can they still reach each other?\n- [ ] Why is the ARP request sent to everyone, but the reply only to pc1?\n- [ ] After step 4, the PCs are on the same switch. Why can't they ping each other any more?\n",
+  "nodes": [
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/host:latest",
+      "x": 60,
+      "y": 330,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 420,
+      "y": 330,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "sw1",
+      "name": "sw1",
+      "x": 240,
+      "y": 140,
+      "subnet": "192.168.10.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-pc1-sw1",
+      "source": "pc1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.10.11",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2-sw1",
+      "source": "pc2",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.10.12",
+      "target_ip": ""
+    }
+  ],
+  "notes": [],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}

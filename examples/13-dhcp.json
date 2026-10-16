@@ -1,0 +1,106 @@
+{
+  "name": "13-dhcp",
+  "description": "Getting an address automatically: **gw** is a home-router style gateway that hands out addresses by **DHCP** (with dnsmasq), and NATs the LAN to the internet.\n\n| Container | Address on `192.168.50.0/24` (switch **lan**) | |\n|---|---|---|\n| gw | `192.168.50.1` (fixed), plus `nat0` | DHCP server, DNS, NAT |\n| pc1 | from DHCP | asks at every start (its startup commands) |\n| pc2 | from DHCP | you ask, by hand |\n\nThe PCs' DHCP addresses come from the range `192.168.50.100` – `.150`. In their settings, *Network OS → DockerLab sets the addresses* is off, so DockerLab leaves them unaddressed.\n\n## Try it\n1. **Deploy**. In pc1's **Console**: `ip -br addr`, `ip route` and `cat /etc/resolv.conf` show what DHCP gave it.\n2. Click the **pc2–lan** cable and **Capture**. Then in pc2's console, ask for an address:\n   ```\n   ip -br addr\n   udhcpc -i eth0 -x hostname:pc2\n   ip -br addr\n   ```\n   Wireshark shows the four DHCP messages: *Discover*, *Offer*, *Request*, *Ack* (DORA). `-x hostname:pc2` sends the PC's name along (DHCP option 12), so gw knows who's asking.\n3. In gw's console, see the leases and the log:\n   ```\n   cat /var/lib/misc/dnsmasq.leases\n   tail /var/log/dnsmasq.log\n   ```\n4. From pc2: `ping -c 3 1.1.1.1` and `nslookup example.com` (the DNS server is gw). Then `ping -c 2 pc1`: gw's DNS server knows pc1's name from its DHCP request.\n5. Give pc1 a fixed address: in gw's startup commands, add\n   `--dhcp-host=pc1,192.168.50.10 \\` before the `--dhcp-authoritative` line, then **Stop** and **Start** gw and pc1.\n\n## Questions\n- [ ] pc2 has no address when it sends the *Discover*. Which source and destination addresses does that packet use?\n- [ ] Which four things does a PC need to use the network and the internet, and where in the DHCP messages are they?\n- [ ] What would happen with a second DHCP server on the LAN?\n",
+  "nodes": [
+    {
+      "id": "gw",
+      "name": "gw",
+      "image": "dockerlab/gateway:latest",
+      "x": 250,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": true,
+      "privileged": false,
+      "startup": "# NAT to the internet, and DHCP (and DNS) for the LAN, from dnsmasq\nnat-on\npkill -x dnsmasq 2>/dev/null; mkdir -p /var/lib/misc\ndnsmasq --interface=eth0 --bind-interfaces --dhcp-leasefile=/var/lib/misc/dnsmasq.leases \\\n  --dhcp-range=192.168.50.100,192.168.50.150,255.255.255.0,1h \\\n  --dhcp-option=option:router,192.168.50.1 \\\n  --dhcp-option=option:dns-server,192.168.50.1 \\\n  --dhcp-authoritative --log-dhcp --log-facility=/var/log/dnsmasq.log\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/host:latest",
+      "x": 40,
+      "y": 420,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# Ask for an address by DHCP (BusyBox udhcpc), sending this PC's name: it sets the address, default route and DNS server\nudhcpc -i eth0 -q -t 5 -x hostname:$(hostname)\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 460,
+      "y": 420,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "lan",
+      "name": "lan",
+      "x": 260,
+      "y": 250,
+      "subnet": "192.168.50.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-gw-lan",
+      "source": "gw",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "192.168.50.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc1-lan",
+      "source": "pc1",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2-lan",
+      "source": "pc2",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "",
+      "target_ip": ""
+    }
+  ],
+  "notes": [],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n",
+    "dockerlab/gateway:latest": "FROM alpine:latest\n\n# A home-router style gateway: NAT (iptables) plus DHCP and DNS (dnsmasq), and the usual network tools\nRUN apk add --no-cache dnsmasq iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n"
+  }
+}
