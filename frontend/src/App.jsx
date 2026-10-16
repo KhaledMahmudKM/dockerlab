@@ -203,6 +203,13 @@ export default function App() {
     await afterSwitch();
   };
 
+  // ---- keep the Docker Host status current (VM shut down, network lost, back again)
+  useEffect(() => {
+    if (engine.state === "none") return;
+    const t = setInterval(() => { if (document.visibilityState === "visible") refreshEngine(); }, 15000);
+    return () => clearInterval(t);
+  }, [engine.state, refreshEngine]);
+
   // ---- poll runtime state for the saved lab
   useEffect(() => {
     if (!savedName || engine.state !== "up") return;
@@ -676,6 +683,27 @@ export default function App() {
 
         {(show.shelf || show.host) && <>
         <aside className="left" style={{ width: layout.left }}>
+          {show.host && <div className={`host-pane ${show.shelf ? "" : "is-alone"}`}>
+          <h2>Docker Host</h2>
+          <p className={`engine engine-${engine.state}`} role="status"
+              title={engine.error || (engine.docker_host ? `DockerLab works with Docker at ${engine.docker_host}` : "")}>
+              <span className="engine-text">{engine.state === "up" ? `Docker ${engine.server_version} on ${engineHost(engine.docker_host)}`
+                : engine.state === "down" ? `Can't reach ${conn?.active ? engineHost(conn.active === "local" ? "local socket" : conn.active) : "the Docker host"}`
+                : engine.state === "none" ? "Not connected" : "Connecting…"}</span>
+            </p>
+          <div className="host-actions">
+            <button className={`mini ${engine.state === "none" ? "primary" : ""}`} onClick={() => setConnectOpen(true)}
+              title={engine.state === "none" ? "Choose the Docker host" : "Connect to another Docker host, or disconnect"}>
+              {engine.state === "none" ? "Connect…" : "Change…"}</button>
+            {engine.state === "down" && (
+              <button className="mini" onClick={refreshEngine} title="Try to reach the Docker host again">Retry</button>
+            )}
+            {engine.state === "up" && engine.vm && (
+              <button className="mini vm-console" onClick={() => openVmConsole(engine.vm)}
+                title={`Open a terminal on the Docker host, ${engine.vm}`}>Console</button>
+            )}
+          </div>
+          </div>}
           {show.shelf && <div className="shelf">
           <h2>Add</h2>
           <ul className="images devices">
@@ -714,29 +742,6 @@ export default function App() {
             {engine.state === "down" && <li className="empty">{engine.error}</li>}
             {engine.state === "none" && <li className="empty">Connect to a Docker host to see its images.</li>}
           </ul>
-          </div>}
-          {show.shelf && show.host && (
-            <Splitter dir="h" grow="below" value={layout.host} onChange={(v) => setPaneSize("host", v)}
-              min={90} max={() => window.innerHeight - 260} />
-          )}
-          {show.host && <div className={`host-pane ${show.shelf ? "" : "is-alone"}`} style={show.shelf ? { height: layout.host } : undefined}>
-          <h2>Docker Host</h2>
-          <div className="engine-row">
-            <button className={`engine engine-${engine.state}`} onClick={refreshEngine}
-              title={engine.error || (engine.docker_host ? `${engine.docker_host}. Click to check again.` : "")}>
-              <span className="engine-text">{engine.state === "up" ? `Docker ${engine.server_version} on ${engineHost(engine.docker_host)}`
-                : engine.state === "down" ? `Can't reach ${conn?.active ? engineHost(conn.active === "local" ? "local socket" : conn.active) : "the Docker host"}`
-                : engine.state === "none" ? "Not connected" : "Connecting…"}</span>
-            </button>
-            <div className="host-actions">
-              <button className={`mini ${engine.state === "none" ? "primary" : ""}`} onClick={() => setConnectOpen(true)}>
-                {engine.state === "none" ? "Connect…" : "Change…"}</button>
-              {engine.state === "up" && engine.vm && (
-                <button className="mini vm-console" onClick={() => openVmConsole(engine.vm)}
-                  title={`Open a terminal on the Docker host, ${engine.vm}`}>Console</button>
-              )}
-            </div>
-          </div>
           </div>}
         </aside>
         <Splitter dir="v" grow="left" value={layout.left} onChange={(v) => setPaneSize("left", v)}

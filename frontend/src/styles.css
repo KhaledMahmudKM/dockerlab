@@ -556,3 +556,15 @@ button.primary.attention::after { content: ""; position: absolute; top: -4px; ri
 .ap-presets { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 10px; }
 .menu-pop .ap-presets button { display: inline-block; border: 1px solid var(--rule); padding: 4px 8px; }
 .ap-hint { margin: 4px 10px 0; font-size: 12px; }
+
+/* Docker Host: first in the left pane, as tall as its content */
+.host-pane { border-bottom: 1px solid var(--rule); overflow: visible; }
+.host-pane.is-alone { border-bottom: 0; }
+.host-pane h2 { padding: 12px 16px 0; }
+.host-pane .engine-row { flex-direction: column; align-items: stretch; gap: 6px; padding: 4px 16px 12px; }
+.host-pane .engine { margin: 0; padding: 0; cursor: default; display: flex; align-items: flex-start; gap: 8px; }
+.host-pane .host-actions { display: flex; gap: 6px; margin-left: 17px; }
+.host-pane > h2 { padding: 10px 16px 0; }
+.host-pane > .engine { padding: 4px 16px 0; color: var(--ink-2); font-size: 13px; }
+.host-pane > .host-actions { display: flex; gap: 6px; margin: 6px 0 10px 33px; }
+.host-pane > .host-actions .mini { padding: 2px 8px; font-size: 12.5px; }

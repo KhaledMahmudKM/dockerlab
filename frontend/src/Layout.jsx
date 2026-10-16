@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 
 const KEY = "dockerlab.layout";
 export const PANES = [
-  { id: "shelf", label: "Add and Images", hint: "left, top" },
-  { id: "host", label: "Docker Host", hint: "left, bottom" },
+  { id: "host", label: "Docker Host", hint: "left, top" },
+  { id: "shelf", label: "Add and Images", hint: "left, below Docker Host" },
   { id: "messages", label: "Messages", hint: "under the topology" },
   { id: "details", label: "Details", hint: "right" },
 ];
 const DEFAULTS = {
   show: { shelf: true, host: true, messages: true, details: true },
-  left: 236, right: 320, host: 120,
+  left: 236, right: 320,
 };
 
 const load = () => {
