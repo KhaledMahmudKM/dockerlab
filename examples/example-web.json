@@ -1,0 +1,120 @@
+{
+  "name": "example-web",
+  "description": "A small office LAN: **gw** connects it to the internet and forwards web requests from outside to the web server on **pc1**.\n\n| Container | Address on LAN `10.0.10.0/24` (switch *lan*) |\n|---|---|\n| gw | `10.0.10.1` |\n| pc1 (web server) | `10.0.10.10` |\n| pc2 | `10.0.10.20` |\n\n## Try it\n1. **Deploy**, then open a console on pc2 and run:\n   ```\n   curl http://10.0.10.10\n   ```\n2. From your PC's browser, open `http://<Docker host>:8080` (click gw: the *Port mappings* section has the link). The request reaches gw, which forwards it to pc1.\n3. From pc2, go out through gw's NAT:\n   ```\n   ping -c 3 1.1.1.1\n   curl -I https://example.com\n   ```\n4. Capture the **gw–lan** cable while loading the page from your PC: the destination is `10.0.10.10`, not gw. On gw, see the NAT rules counting packets:\n   ```\n   iptables -t nat -L -n -v\n   ```\n\n## Questions\n- [ ] Why does the web page answer on port 8080 of the Docker host, but port 80 on pc1?\n- [ ] What address does pc1 see the browser's requests coming from? Why isn't it gw's?\n- [ ] Remove the default route on pc1 (`ip route del default`). Which tests still work, and why?\n",
+  "nodes": [
+    {
+      "id": "gw",
+      "name": "gw",
+      "image": "dockerlab/router:latest",
+      "x": 330.0,
+      "y": 40.0,
+      "command": "",
+      "ports": [
+        {
+          "host": 8080,
+          "container": 80,
+          "proto": "tcp"
+        }
+      ],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": true,
+      "privileged": false,
+      "startup": "# Outbound: masquerade the LAN behind gw's nat0 address\nnat-on\n\n# Inbound (port forwarding): Docker publishes the host's port 8080 to gw's port 80 on nat0;\n# send those requests on to the web server on pc1\niptables -t nat -C PREROUTING -i nat0 -p tcp --dport 80 -j DNAT --to-destination 10.0.10.10:80 2>/dev/null \\\n  || iptables -t nat -A PREROUTING -i nat0 -p tcp --dport 80 -j DNAT --to-destination 10.0.10.10:80\n",
+      "interfaces": 0
+    },
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/web:latest",
+      "x": 90.0,
+      "y": 400.0,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# gw is the way out of the LAN\nip route replace default via 10.0.10.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n\n# The web page, then the web server (BusyBox httpd on port 80, serving /var/www)\ncat > /var/www/index.html <<HTML\n<!doctype html>\n<title>pc1</title>\n<h1>Hello from $(hostname)</h1>\n<p>Served by BusyBox httpd at 10.0.10.10, inside the DockerLab LAN.</p>\nHTML\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 570.0,
+      "y": 400.0,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# gw is the way out of the LAN\nip route replace default via 10.0.10.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0
+    }
+  ],
+  "switches": [
+    {
+      "id": "lan",
+      "name": "lan",
+      "x": 352.0,
+      "y": 250.0,
+      "subnet": "10.0.10.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-gw",
+      "source": "gw",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "10.0.10.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc1",
+      "source": "pc1",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "10.0.10.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2",
+      "source": "pc2",
+      "target": "lan",
+      "subnet": "",
+      "source_ip": "10.0.10.20",
+      "target_ip": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "n-out",
+      "x": 640.0,
+      "y": 20.0,
+      "w": 260.0,
+      "h": 120.0,
+      "text": "From your PC: http://<Docker host>:8080\nDocker host :8080 → gw:80 (nat0)\n→ DNAT → pc1 10.0.10.10:80",
+      "color": "blue"
+    },
+    {
+      "id": "n-lan",
+      "x": 640.0,
+      "y": 210.0,
+      "w": 260.0,
+      "h": 96.0,
+      "text": "LAN 10.0.10.0/24\n.1 gw · .10 pc1 (web) · .20 pc2",
+      "color": "yellow"
+    }
+  ],
+  "images": {
+    "dockerlab/router:latest": "FROM alpine:latest\n\n# Networking tools for a gateway or router\nRUN apk add --no-cache iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n",
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n",
+    "dockerlab/web:latest": "FROM alpine:latest\n\n# A small web server (BusyBox httpd), plus the end-host tools: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache busybox-extras iproute2 tcpdump bind-tools curl iputils\nRUN mkdir -p /var/www\n"
+  }
+}

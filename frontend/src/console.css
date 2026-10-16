@@ -1,0 +1,16 @@
+html, body { height: 100%; margin: 0; }
+body.console-page {
+  display: flex; flex-direction: column; background: #1C2A35; color: #E6ECF1;
+  font: 13px/1.4 "Atkinson Hyperlegible", system-ui, sans-serif;
+}
+.term-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: #142029; }
+.term-name { font-weight: 700; font-size: 14px; }
+.term-state { color: #9AA6B0; display: flex; align-items: center; gap: 6px; }
+.term-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #9AA6B0; }
+.term-state[data-kind="ok"]::before { background: #2E9E5B; }
+.term-state[data-kind="closed"]::before { background: #C8432B; }
+.term-bar button {
+  margin-left: auto; font: inherit; color: #E6ECF1; background: #2C3E4C; border: 1px solid #4E5E6B;
+  border-radius: 6px; padding: 3px 10px; cursor: pointer;
+}
+#term { flex: 1; min-height: 0; padding: 6px 0 0 8px; }

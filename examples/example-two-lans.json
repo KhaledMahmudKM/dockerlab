@@ -1,0 +1,158 @@
+{
+  "name": "example-two-lans",
+  "description": "Two LANs joined by a router: **r-gw** routes between LAN 1 (**sw1**, `10.0.1.0/24`) and LAN 2 (**sw2**, `10.0.2.0/24`), and gives both internet access through NAT.\n\n| Container | Address | Role |\n|---|---|---|\n| r-gw | `10.0.1.1`, `10.0.2.1` | router and NAT to the internet |\n| lin-pc | `10.0.1.10` | Linux PC with a desktop |\n| serv-www | `10.0.2.10` | web server |\n\n## Open lin-pc's desktop\nAfter **Deploy**, open `https://<Docker host>:3001` in your PC's browser (click r-gw: the *Port mappings* section has the link) and accept the self-signed certificate warning.\n\n> [!NOTE]\n> The first Deploy downloads the desktop image (about 1.5 GB), so it takes a while.\n\n> [!TIP]\n> The desktop is encoded as video on the Docker host's CPU: give the VM 4 vCPUs if it feels slow. Its frame rate is capped at 30 by `SELKIES_FRAMERATE` in lin-pc's Environment.\n\n## Try it\n1. On lin-pc's desktop, open Firefox and browse to `http://10.0.2.10`. The page comes from serv-www, through r-gw.\n2. In a terminal on lin-pc, trace the path (it goes through `10.0.1.1`), then reach the internet through r-gw's NAT:\n   ```\n   traceroute -n 10.0.2.10\n   curl -I https://example.com\n   ```\n3. Capture the **r-gw–sw2** cable while reloading the page: the source is `10.0.1.10`, because r-gw routes between the LANs without NAT.\n4. Capture the **r-gw–sw1** cable: the desktop's own traffic (TCP 3001) is there too, because the desktop is reached through r-gw. Filter it out in Wireshark with:\n   ```\n   not tcp.port == 3001\n   ```\n\n## Questions\n- [ ] Why does traffic between the LANs keep its source address, but traffic to the internet doesn't?\n- [ ] On serv-www, remove the default route (`ip route del default`). Which tests break, and why?\n",
+  "nodes": [
+    {
+      "id": "r-gw",
+      "name": "r-gw",
+      "image": "dockerlab/router:latest",
+      "x": 360.0,
+      "y": 40.0,
+      "command": "",
+      "ports": [
+        {
+          "host": 3001,
+          "container": 3001,
+          "proto": "tcp"
+        }
+      ],
+      "volumes": [],
+      "env": [],
+      "internet": true,
+      "router": true,
+      "privileged": false,
+      "startup": "# Outbound: masquerade both LANs behind r-gw's nat0 address\nnat-on\n\n# Inbound: the Docker host's port 3001 is published to r-gw's port 3001 on nat0;\n# forward it to lin-pc's desktop, so the desktop is reached through the gateway like any other service\niptables -t nat -C PREROUTING -i nat0 -p tcp --dport 3001 -j DNAT --to-destination 10.0.1.10:3001 2>/dev/null \\\n  || iptables -t nat -A PREROUTING -i nat0 -p tcp --dport 3001 -j DNAT --to-destination 10.0.1.10:3001\n",
+      "interfaces": 0
+    },
+    {
+      "id": "lin-pc",
+      "name": "lin-pc",
+      "image": "dockerlab/desktop:latest",
+      "x": 60.0,
+      "y": 470.0,
+      "command": "",
+      "ports": [],
+      "volumes": [
+        {
+          "source": "/dev/shm",
+          "target": "/dev/shm",
+          "mode": "rw"
+        }
+      ],
+      "env": [
+        {
+          "key": "PUID",
+          "value": "1000"
+        },
+        {
+          "key": "PGID",
+          "value": "1000"
+        },
+        {
+          "key": "TZ",
+          "value": "Etc/UTC"
+        },
+        {
+          "key": "SELKIES_FRAMERATE",
+          "value": "8-30"
+        }
+      ],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r-gw is the way out of LAN 1\nip route replace default via 10.0.1.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0
+    },
+    {
+      "id": "serv-www",
+      "name": "serv-www",
+      "image": "dockerlab/web:latest",
+      "x": 640.0,
+      "y": 470.0,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r-gw is the way out of LAN 2\nip route replace default via 10.0.2.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n\n# The web page, then the web server (BusyBox httpd on port 80, serving /var/www)\ncat > /var/www/index.html <<HTML\n<!doctype html>\n<title>serv-www</title>\n<h1>Hello from $(hostname)</h1>\n<p>Served by BusyBox httpd at 10.0.2.10 on LAN 2, reached through r-gw.</p>\nHTML\npkill -x httpd 2>/dev/null; busybox-extras httpd -p 80 -h /var/www\n",
+      "interfaces": 0
+    }
+  ],
+  "switches": [
+    {
+      "id": "sw1",
+      "name": "sw1",
+      "x": 140.0,
+      "y": 290.0,
+      "subnet": "10.0.1.0/24"
+    },
+    {
+      "id": "sw2",
+      "name": "sw2",
+      "x": 610.0,
+      "y": 290.0,
+      "subnet": "10.0.2.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-gw-sw1",
+      "source": "r-gw",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "10.0.1.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-gw-sw2",
+      "source": "r-gw",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "10.0.2.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc",
+      "source": "lin-pc",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "10.0.1.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-www",
+      "source": "serv-www",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "10.0.2.10",
+      "target_ip": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "n-desk",
+      "x": 700.0,
+      "y": 30.0,
+      "w": 270.0,
+      "h": 120.0,
+      "text": "lin-pc's desktop: https://<Docker host>:3001\nDocker host :3001 → r-gw (nat0)\n→ DNAT → lin-pc 10.0.1.10:3001",
+      "color": "blue"
+    },
+    {
+      "id": "n-addr",
+      "x": 30.0,
+      "y": 30.0,
+      "w": 260.0,
+      "h": 120.0,
+      "text": "LAN 1 (sw1) 10.0.1.0/24: r-gw .1, lin-pc .10\nLAN 2 (sw2) 10.0.2.0/24: r-gw .1, serv-www .10",
+      "color": "yellow"
+    }
+  ],
+  "images": {
+    "dockerlab/router:latest": "FROM alpine:latest\n\n# Networking tools for a gateway or router\nRUN apk add --no-cache iproute2 iptables tcpdump bind-tools curl iputils\n\n# nat-on: masquerade traffic leaving through the NAT interface (nat0).\n# Safe to run more than once; use it in startup commands.\nRUN printf '%s\\n' '#!/bin/sh' \\\n      'iptables -t nat -C POSTROUTING -o nat0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o nat0 -j MASQUERADE' \\\n      > /usr/local/bin/nat-on && chmod +x /usr/local/bin/nat-on\n",
+    "dockerlab/web:latest": "FROM alpine:latest\n\n# A small web server (BusyBox httpd), plus the end-host tools: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache busybox-extras iproute2 tcpdump bind-tools curl iputils\nRUN mkdir -p /var/www\n",
+    "dockerlab/desktop:latest": "FROM lscr.io/linuxserver/webtop:latest\n\n# An XFCE desktop in the browser (Selkies, HTTPS on port 3001), plus a web browser\n# and the end-host network tools: full ip, packet capture, DNS lookups, web requests, ping\nRUN apk add --no-cache firefox iproute2 tcpdump bind-tools curl iputils\n"
+  }
+}
