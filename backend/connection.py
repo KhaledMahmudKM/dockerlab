@@ -10,7 +10,8 @@ Connecting also gets a fresh host ready, so nobody has to open a terminal:
   key (creating one if needed), and, optionally, a sudo rule for packet capture and
   the firewall rule (tcpdump, iptables), and adds the user to the docker group.
 
-The choice is saved in ~/.dockerlab/settings.json and reconnected at the next start.
+The choice is saved in ~/.dockerlab/settings.json. At the next start DockerLab does not
+connect by itself: the user presses Connect (unless "Connect automatically" was ticked).
 A DOCKER_HOST set in the environment still wins at startup, for scripted setups.
 """
 from __future__ import annotations
@@ -76,7 +77,7 @@ def init() -> None:
         _active, _source = env, "env"
         return
     s = load_settings()
-    if s.get("auto_connect", True) and s.get("url"):
+    if s.get("auto_connect", False) and s.get("url"):
         _active, _source = s["url"], "settings"
         _apply(_active)
 

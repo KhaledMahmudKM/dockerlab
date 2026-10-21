@@ -163,7 +163,7 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
-    api.connection().then((c) => { setConn(c); if (!c.active) setConnectOpen(true); }).catch(() => {});
+    api.connection().then(setConn).catch(() => {});   // the user presses Connect…; nothing connects or opens by itself
     refreshEngine(); api.labs().then(setLabs).catch(() => {});
     api.examples().then(setExamples).catch(() => {});
     api.about().then((a) => {

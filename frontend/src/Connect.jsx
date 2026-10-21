@@ -10,7 +10,7 @@ const label = (r) => (r.mode === "local" ? "Docker on this computer" : `${r.user
  */
 export default function ConnectDialog({ open, conn, onClose, onConnected, onDisconnect, beforeSwitch }) {
   const saved = conn?.saved ?? {};
-  const [form, setForm] = useState({ mode: "ssh", host: "", user: "gns3", port: 22, auto_connect: true });
+  const [form, setForm] = useState({ mode: "ssh", host: "", user: "gns3", port: 22, auto_connect: false });
   const [step, setStep] = useState({ name: "form" });     // form | hostkey | hostkey_changed | password
   const [password, setPassword] = useState("");
   const [sudoRule, setSudoRule] = useState(true);
@@ -21,7 +21,7 @@ export default function ConnectDialog({ open, conn, onClose, onConnected, onDisc
   useEffect(() => {
     if (!open) return;
     setForm({ mode: saved.mode || "ssh", host: saved.host || "", user: saved.user || "gns3",
-              port: saved.port || 22, auto_connect: saved.auto_connect ?? true });
+              port: saved.port || 22, auto_connect: saved.auto_connect ?? false });
     setStep({ name: "form" }); setPassword(""); setError(""); setBusy(false);
     setTimeout(() => first.current?.focus(), 0);
   }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps

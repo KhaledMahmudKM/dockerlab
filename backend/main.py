@@ -137,7 +137,12 @@ def client() -> docker.DockerClient:
             _client = new_client()
             _client.ping()
             return _client
-        except DockerException as e:
+        except Exception as e:  # noqa: BLE001 — DockerException, paramiko.SSHException, OSError, ...
+            if _client is not None:
+                try:
+                    _client.close()
+                except Exception:  # noqa: BLE001
+                    pass
             _client = None
             raise HTTPException(503, f"Cannot reach Docker engine "
                                      f"({os.environ.get('DOCKER_HOST', 'local socket')}): {e}")
@@ -171,7 +176,7 @@ async def connect(request: Request):
     url = connection.url_of(mode, host, user, port)
     previous = connection.active()
     connection.activate(url, remember={"mode": mode, "host": host, "user": user, "port": port,
-                                       "auto_connect": bool(b.get("auto_connect", True))})
+                                       "auto_connect": bool(b.get("auto_connect", False))})
     reset_client()
     try:
         v = (await asyncio.to_thread(lambda: client().version())).get("Version")
@@ -192,13 +197,19 @@ def disconnect():
 # ---------------------------------------------------------------- engine
 @app.get("/api/status")
 def status():
-    c = client()
-    v = c.version()
+    c = client()                               # 503 "Not connected..." when no host is chosen
+    try:
+        v = c.version()
+        fixed = deployer.supports_ifname(c)
+    except Exception as e:  # noqa: BLE001 — the host went away between ping and here (VM off, SSH dropped)
+        reset_client()                         # next poll or Retry builds a fresh connection
+        raise HTTPException(503, f"Cannot reach Docker engine "
+                                 f"({os.environ.get('DOCKER_HOST', 'local socket')}): {e or type(e).__name__}")
     return {"connected": True,
             "docker_host": os.environ.get("DOCKER_HOST", "local socket"),
             "server_version": v.get("Version"), "api_version": v.get("ApiVersion"),
             "os": v.get("Os"), "arch": v.get("Arch"),
-            "fixed_ifnames": deployer.supports_ifname(c),
+            "fixed_ifnames": fixed,
             "wireshark": capture.wireshark_path() is not None,
             "ssh": capture.ssh_target() is not None,
             "vm": vmshell.target()}

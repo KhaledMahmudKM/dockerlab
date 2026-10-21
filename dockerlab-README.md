@@ -40,7 +40,7 @@ The first time, DockerLab asks which Docker host to use. Enter the VM's address 
 1. **Trust the host's key.** DockerLab shows the VM's SSH key fingerprint, like `ssh` does the first time. Trust it, and it's saved in your `known_hosts`. If the key ever changes (for example after re-importing the VM), DockerLab says so, in red, and asks before replacing it.
 2. **The user's password, once** (`gns3` on the GNS3 VM). DockerLab logs in with it to install your SSH key (creating `~/.ssh/id_ed25519` if you have none), adds the user to the `docker` group if needed, and, with *Also allow packet capture* ticked, adds a sudo rule so `tcpdump` and `iptables` run without a password (in `/etc/sudoers.d/dockerlab`). The password isn't stored; from then on, DockerLab logs in with the key.
 
-DockerLab remembers the host (in `~/.dockerlab/settings.json`) and reconnects at the next start, unless you untick *Connect to it automatically*. The **Docker Host** pane at the bottom left shows the connection, e.g. *Docker 29.6.2 on 192.168.56.103*; click it to check again, **Change…** to connect elsewhere (recent hosts are one click away) or disconnect, and **Console** for a terminal on the host. *On this computer* uses a Docker engine on the PC itself, such as Docker Desktop. Switching hosts while labs run asks whether to stop them first.
+DockerLab remembers the host (in `~/.dockerlab/settings.json`) and reconnects at the next start, unless you untick *Connect to it automatically*. The **Docker Host** pane at the top left shows the connection, e.g. *Docker 29.6.2 on 192.168.56.103*. DockerLab checks it on its own; if the host can't be reached, **Retry** checks again once you've fixed it. **Change…** to connect elsewhere (recent hosts are one click away) or disconnect, and **Console** for a terminal on the host. *On this computer* uses a Docker engine on the PC itself, such as Docker Desktop. Switching hosts while labs run asks whether to stop them first.
 
 If you set up key login yourself, nothing is asked. A `DOCKER_HOST` environment variable, if set, still wins at startup, for scripted setups.
 
@@ -118,8 +118,8 @@ The window has six panes: the top bar and the topology (always shown), and four 
 
 | Pane | Where | Holds |
 |---|---|---|
-| Add and Images | left, top | Switch, Note and the images to drag onto the bench; Manage and Build |
-| Docker Host | left, bottom | the Docker engine's status and the Console button |
+| Docker Host | left, top | the Docker engine's status, Change… and the Console button |
+| Add and Images | left, below Docker Host | Switch, Note and the images to drag onto the bench; Manage and Build |
 | Messages | under the topology | the message log (below) |
 | Details | right | settings of the selected container, switch, cable or note, or the lab's description |
 
@@ -155,7 +155,7 @@ Containers run in the VM, independently of DockerLab, so DockerLab helps you kee
 
 **Console:** double-click a running container, or click it and press *Console*. A terminal window opens in the browser, running `bash` if the image has it and `sh` otherwise. Open as many as you like. If the container stops, the window says *Disconnected*; press *Reconnect* after starting it again.
 
-**Docker host console:** *Console*, in the Docker Host pane at the bottom left, opens a terminal on the machine running Docker (the GNS3 VM here), logged in as the user DockerLab connects with. It uses the same SSH login as DockerLab, so it works with the VM running headless. It's there when DockerLab connects over SSH.
+**Docker host console:** *Console*, in the Docker Host pane at the top left, opens a terminal on the machine running Docker (the GNS3 VM here), logged in as the user DockerLab connects with. It uses the same SSH login as DockerLab, so it works with the VM running headless. It's there when DockerLab connects over SSH.
 
 **Copy and paste** in any console window: select text and press **Ctrl+C** to copy (with nothing selected, Ctrl+C interrupts as usual). **Ctrl+V** pastes. **Right-click** copies the selection, or pastes when nothing is selected. Ctrl+Shift+C and Ctrl+Shift+V work too.
 
