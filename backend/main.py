@@ -117,6 +117,12 @@ def reset_client() -> None:
 NOT_CONNECTED = "Not connected to a Docker host. Press Connect in the Docker Host pane."
 
 
+def _short(e: Exception) -> str:
+    """One line for the UI and the log, without the traceback."""
+    msg = (getattr(e, "explanation", None) or str(e) or type(e).__name__).strip()
+    return msg.splitlines()[-1] if msg else type(e).__name__
+
+
 def client() -> docker.DockerClient:
     """The shared client, (re)connected lazily."""
     global _client
@@ -137,15 +143,10 @@ def client() -> docker.DockerClient:
             _client = new_client()
             _client.ping()
             return _client
-        except Exception as e:  # noqa: BLE001 — DockerException, paramiko.SSHException, OSError, ...
-            if _client is not None:
-                try:
-                    _client.close()
-                except Exception:  # noqa: BLE001
-                    pass
+        except Exception as e:  # noqa: BLE001 — over SSH, a lost host raises paramiko/socket errors, not DockerException
             _client = None
             raise HTTPException(503, f"Cannot reach Docker engine "
-                                     f"({os.environ.get('DOCKER_HOST', 'local socket')}): {e}")
+                                     f"({os.environ.get('DOCKER_HOST', 'local socket')}): {_short(e)}")
 
 
 # ---------------------------------------------------------------- connection
@@ -175,15 +176,17 @@ async def connect(request: Request):
         return r
     url = connection.url_of(mode, host, user, port)
     previous = connection.active()
-    connection.activate(url, remember={"mode": mode, "host": host, "user": user, "port": port,
-                                       "auto_connect": bool(b.get("auto_connect", False))})
+    connection.activate(url)
     reset_client()
     try:
         v = (await asyncio.to_thread(lambda: client().version())).get("Version")
     except HTTPException as e:
-        connection.activate(previous)          # stay on the old host
+        connection.activate(previous)          # stay on the old host, and don't remember this one
         reset_client()
-        raise HTTPException(400, f"SSH works, but Docker didn't answer through it: {e.detail}")
+        raise HTTPException(400, f"Docker didn't answer on {'this computer' if mode == 'local' else host}: {e.detail}")
+    # remembered (as the default and in Recent) only once Docker has answered
+    connection.activate(url, remember={"mode": mode, "host": host, "user": user, "port": port,
+                                       "auto_connect": bool(b.get("auto_connect", False))})
     return {"ok": True, "url": url, "version": v, "notes": r.get("notes", [])}
 
 
@@ -197,19 +200,17 @@ def disconnect():
 # ---------------------------------------------------------------- engine
 @app.get("/api/status")
 def status():
-    c = client()                               # 503 "Not connected..." when no host is chosen
+    c = client()
     try:
         v = c.version()
-        fixed = deployer.supports_ifname(c)
-    except Exception as e:  # noqa: BLE001 — the host went away between ping and here (VM off, SSH dropped)
-        reset_client()                         # next poll or Retry builds a fresh connection
-        raise HTTPException(503, f"Cannot reach Docker engine "
-                                 f"({os.environ.get('DOCKER_HOST', 'local socket')}): {e or type(e).__name__}")
+    except Exception as e:  # noqa: BLE001 — the host went away between the ping and this call
+        reset_client()
+        raise HTTPException(503, f"Cannot reach Docker engine ({os.environ.get('DOCKER_HOST', 'local socket')}): {_short(e)}")
     return {"connected": True,
             "docker_host": os.environ.get("DOCKER_HOST", "local socket"),
             "server_version": v.get("Version"), "api_version": v.get("ApiVersion"),
             "os": v.get("Os"), "arch": v.get("Arch"),
-            "fixed_ifnames": fixed,
+            "fixed_ifnames": deployer.supports_ifname(c),
             "wireshark": capture.wireshark_path() is not None,
             "ssh": capture.ssh_target() is not None,
             "vm": vmshell.target()}

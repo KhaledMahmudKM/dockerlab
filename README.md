@@ -1,9 +1,9 @@
 # DockerLab
 
-A GNS3-style lab builder for Docker containers. Drag images onto a bench, cable them together, set addresses, ports, volumes, environment and startup commands, then deploy. Open a console on any container in the browser, and capture any cable in Wireshark with one click. The app runs on your Windows PC; the containers run on the Docker engine inside the GNS3 VM.
+A GNS3-style lab builder for Docker containers. Drag images onto a bench, cable them together, set addresses, ports, volumes, environment and startup commands, then deploy. Open a console on any container in the browser, and capture any cable in Wireshark with one click. The app runs on your Windows PC; the containers run on the Docker engine inside a Linux VM, the *Docker host*.
 
 ```
-Windows PC                               GNS3 VM (VirtualBox)
+Windows PC                               Docker host VM (VirtualBox)
 ┌───────────────────────────┐   SSH     ┌─────────────────────────────┐
 │ browser ─▶ DockerLab      │ ────────▶ │ Docker engine               │
 │ http://127.0.0.1:8000     │           │  dl-<lab>-<node> containers │
@@ -11,10 +11,11 @@ Windows PC                               GNS3 VM (VirtualBox)
 └───────────────────────────┘           └─────────────────────────────┘
 ```
 
-## 1. Prepare the GNS3 VM (once)
+## 1. Prepare the Docker host VM (once)
 
-1. Start the GNS3 VM and note the IP it shows on its console (e.g. `192.168.56.103`).
-   The VM's first adapter must be on the VirtualBox **host-only** network, or Windows can't reach it.
+The Docker host is a Linux VM in VirtualBox, such as the Debian 13 VM that comes with the course. Any Linux VM works if it has Docker, an SSH server and `sudo`; the GNS3 VM does too.
+
+1. Import the VM and start it. Its network adapter must be on the VirtualBox **host-only** network, or Windows can't reach it. It gets its address there by DHCP, so the address can differ from one PC to another: the VM shows it on its console (e.g. `192.168.56.103`).
 2. That's all: DockerLab sets up the rest the first time it connects (below). The VM's Docker version is shown once connected. **Fixed interface names (eth0, eth1, nat0) need Docker 28 or newer.** On an older engine everything else works, but Docker picks the names; the bench then shows the real names, and startup commands that name interfaces need adjusting.
 
 ## 2. Run DockerLab on Windows
@@ -35,12 +36,12 @@ Open http://127.0.0.1:8000.
 
 ### Connecting to the Docker host
 
-The first time, DockerLab asks which Docker host to use. Enter the VM's address (e.g. `192.168.56.103`) and its user (`gns3`), and press **Connect**. On a fresh VM, two questions follow, once each:
+DockerLab starts without connecting. Press **Connect…** in the Docker Host pane at the top left, enter the VM's address (from its console) and its user, and press **Connect**. On a fresh VM, two questions follow, once each:
 
 1. **Trust the host's key.** DockerLab shows the VM's SSH key fingerprint, like `ssh` does the first time. Trust it, and it's saved in your `known_hosts`. If the key ever changes (for example after re-importing the VM), DockerLab says so, in red, and asks before replacing it.
-2. **The user's password, once** (`gns3` on the GNS3 VM). DockerLab logs in with it to install your SSH key (creating `~/.ssh/id_ed25519` if you have none), adds the user to the `docker` group if needed, and, with *Also allow packet capture* ticked, adds a sudo rule so `tcpdump` and `iptables` run without a password (in `/etc/sudoers.d/dockerlab`). The password isn't stored; from then on, DockerLab logs in with the key.
+2. **The user's password, once.** DockerLab logs in with it to install your SSH key (creating `~/.ssh/id_ed25519` if you have none), adds the user to the `docker` group if needed, and, with *Also allow packet capture* ticked, adds a sudo rule so `tcpdump` and `iptables` run without a password (in `/etc/sudoers.d/dockerlab`). The password isn't stored; from then on, DockerLab logs in with the key.
 
-DockerLab remembers the host (in `~/.dockerlab/settings.json`) and reconnects at the next start, unless you untick *Connect to it automatically*. The **Docker Host** pane at the top left shows the connection, e.g. *Docker 29.6.2 on 192.168.56.103*. DockerLab checks it on its own; if the host can't be reached, **Retry** checks again once you've fixed it. **Change…** to connect elsewhere (recent hosts are one click away) or disconnect, and **Console** for a terminal on the host. *On this computer* uses a Docker engine on the PC itself, such as Docker Desktop. Switching hosts while labs run asks whether to stop them first.
+DockerLab remembers the host (in `~/.dockerlab/settings.json`), so next time the Connect dialog is already filled in, and recent hosts are one click away. It connects only when you press **Connect**, unless you tick *Connect to it automatically when DockerLab starts*. Since the VM's address comes from DHCP, check it on the VM's console if connecting fails after a restart. The **Docker Host** pane at the top left shows the connection, e.g. *Docker 29.6.2 on 192.168.56.103*. DockerLab checks it on its own; if the host can't be reached, **Retry** checks again once you've fixed it. **Change…** to connect elsewhere (recent hosts are one click away) or disconnect, and **Console** for a terminal on the host. *On this computer* uses a Docker engine on the PC itself, such as Docker Desktop. Switching hosts while labs run asks whether to stop them first.
 
 If you set up key login yourself, nothing is asked. A `DOCKER_HOST` environment variable, if set, still wins at startup, for scripted setups.
 
@@ -156,7 +157,7 @@ Containers run in the VM, independently of DockerLab, so DockerLab helps you kee
 
 **Console:** double-click a running container, or click it and press *Console*. A terminal window opens in the browser, running `bash` if the image has it and `sh` otherwise. Open as many as you like. If the container stops, the window says *Disconnected*; press *Reconnect* after starting it again.
 
-**Docker host console:** *Console*, in the Docker Host pane at the top left, opens a terminal on the machine running Docker (the GNS3 VM here), logged in as the user DockerLab connects with. It uses the same SSH login as DockerLab, so it works with the VM running headless. It's there when DockerLab connects over SSH.
+**Docker host console:** *Console*, in the Docker Host pane at the top left, opens a terminal on the machine running Docker (the VM), logged in as the user DockerLab connects with. It uses the same SSH login as DockerLab, so it works with the VM running headless. It's there when DockerLab connects over SSH.
 
 **Copy and paste** in any console window: select text and press **Ctrl+C** to copy (with nothing selected, Ctrl+C interrupts as usual). **Ctrl+V** pastes. **Right-click** copies the selection, or pastes when nothing is selected. Ctrl+Shift+C and Ctrl+Shift+V work too.
 
@@ -166,11 +167,11 @@ ip route add default via 10.0.1.254
 ```
 The panel lists the node's interface names, and after each run shows whether the commands succeeded, with their output. Commands that haven't finished after 20 seconds are reported as unfinished, so start long-running programs in the background (`my-server &`).
 
-**Capture:** after deploying, click a cable and press *Capture in Wireshark* (for a switch, use *Capture* next to a port). The app runs `ssh <vm> sudo tcpdump` and pipes it into Wireshark on your PC. If it can't, it says why, usually missing SSH key login or sudo rule (if key login works already, DockerLab doesn't ask for the password, so add the rule by hand: on the host, `sudo visudo -f /etc/sudoers.d/dockerlab` and add `gns3 ALL=(root) NOPASSWD: /usr/bin/tcpdump, /usr/sbin/tcpdump, /usr/sbin/iptables`). *Run it yourself* shows the same command for Windows **cmd** (not PowerShell 5, which corrupts binary pipes); it stays valid until that container restarts.
+**Capture:** after deploying, click a cable and press *Capture in Wireshark* (for a switch, use *Capture* next to a port). The app runs `ssh <vm> sudo tcpdump` and pipes it into Wireshark on your PC. If it can't, it says why, usually missing SSH key login or sudo rule (if key login works already, DockerLab doesn't ask for the password, so add the rule by hand: on the host, `sudo visudo -f /etc/sudoers.d/dockerlab` and add `<user> ALL=(root) NOPASSWD: /usr/bin/tcpdump, /usr/sbin/tcpdump, /usr/sbin/iptables`). *Run it yourself* shows the same command for Windows **cmd** (not PowerShell 5, which corrupts binary pipes); it stays valid until that container restarts.
 
 Capture listens on a container's *port*: the VM-side end of its virtual cable. On a cable between two containers that sees everything on the cable. On a switch it sees what that one container sends and receives, like a mirror port: broadcasts such as ARP reach every port, but unicast reaches only its destination, so pc3's port won't show pc1 talking to pc2. (Capturing on the Linux bridge itself would miss unicast between its ports entirely.)
 
-**Shell without the app:** `ssh -t gns3@192.168.56.101 docker exec -it dl-<lab>-<node> sh`. The `-t` is required. Containers aren't reachable from Windows by plain `ssh`, because cable networks are internal to the VM.
+**Shell without the app:** `ssh -t <user>@<VM address> docker exec -it dl-<lab>-<node> sh`. The `-t` is required. Containers aren't reachable from Windows by plain `ssh`, because cable networks are internal to the VM.
 
 ### Build an image
 
@@ -216,7 +217,7 @@ Images built with DockerLab versions before lab sharing don't carry their Docker
 To open a web server (or any service) in a lab from your PC, publish its port: click the container and add a row under **Port mappings**, e.g. *Host 8080, Container 80*. After a Redeploy, Docker listens on port 8080 on all of the Docker host's addresses, including the VM's Host-only one, so the panel shows a link such as `http://192.168.56.103:8080`. Notes:
 
 - The service must listen on all interfaces (`0.0.0.0`) inside the container: published traffic arrives on `nat0`.
-- Each host port can be used once on the VM, across all labs. GNS3 itself uses port 80 or 3080 there, so pick 8080 and up.
+- Each host port can be used once on the VM, across all labs. Avoid ports the VM itself uses (22 for SSH; on the GNS3 VM also 80 and 3080): 8080 and up are safe.
 - **Changing the default route breaks it.** Docker forwards the request without changing its source address, so the container replies to your PC. If its startup commands send the default route into the lab (`ip route replace default via …`), the reply is lost. The panel warns about this and shows the fix: a route back to your PC's network through `nat0`, e.g. `ip route add 192.168.56.0/24 via 172.17.0.1 dev nat0`.
 - The realistic alternative is to publish the port on the lab's gateway and forward it to the server, as a home router does. The *07-port-forward* lab does exactly this.
 

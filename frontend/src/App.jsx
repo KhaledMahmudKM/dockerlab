@@ -163,7 +163,7 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
-    api.connection().then(setConn).catch(() => {});   // the user presses Connect…; nothing connects or opens by itself
+    api.connection().then(setConn).catch(() => {});   // connecting is up to the user: Connect… in the Docker Host pane
     refreshEngine(); api.labs().then(setLabs).catch(() => {});
     api.examples().then(setExamples).catch(() => {});
     api.about().then((a) => {
