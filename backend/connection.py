@@ -86,6 +86,21 @@ def active() -> str | None:
     return _active
 
 
+def reachable(timeout: float = 2.0) -> bool:
+    """Quick check that the active Docker host answers on its SSH port. A powered-off
+    VM doesn't refuse connections, it just never answers, so without this an SSH
+    connect can hang for a minute or more."""
+    from urllib.parse import urlparse
+    if not _active or _active == LOCAL or not _active.startswith("ssh://"):
+        return True
+    u = urlparse(_active)
+    try:
+        socket.create_connection((u.hostname, u.port or 22), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
 def describe() -> dict:
     s = load_settings()
     return {"active": _active, "source": _source, "saved": {k: s.get(k) for k in ("mode", "host", "user", "port", "auto_connect")},

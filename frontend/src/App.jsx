@@ -6,6 +6,7 @@ import {
 import { api, engineHost, openConsole, openVmConsole } from "./api.js";
 import { CableEdge, ContainerNode, NoteNode, RuntimeContext, SwitchNode, cableSlots } from "./canvas.jsx";
 import Inspector from "./Inspector.jsx";
+import Description from "./Description.jsx";
 import { ChoiceDialog, NameDialog, RunningPanel, sameLab } from "./Running.jsx";
 import BuildPanel from "./Build.jsx";
 import ManagePanel from "./Manage.jsx";
@@ -124,6 +125,10 @@ export default function App() {
     if (id === "manage") setManageTab(null); else setBuildOpen(false);
     setActiveTool("topology");
   };
+  // the description pane: about half the right column unless resized
+  const descHeight = layout.desc ?? Math.max(160, Math.round((window.innerHeight - 56) * 0.5));
+  const popOutDescription = () =>
+    window.open(`${location.pathname}?tool=description`, "dockerlab-description", "width=760,height=900");
   /** A tool in a browser window of its own; it reports back over a BroadcastChannel. */
   const popOut = (id) => {
     const q = new URLSearchParams({ tool: id, tab: manageTab ?? "containers", lab: savedName ?? "" });
@@ -573,13 +578,19 @@ export default function App() {
     else if (m.type === "changed") onHostChanged();
     else if (m.type === "built") onBuilt(m.tag);
     else if (m.type === "open-lab") { window.focus(); setActiveTool("topology"); onOpen(m.lab); }
+    else if (m.type === "desc-request") sendDescription();
   };
+  const channel = useRef(null);
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const ch = new BroadcastChannel("dockerlab");
     ch.onmessage = (e) => fromWindows.current?.(e.data);
-    return () => ch.close();
+    channel.current = ch;
+    return () => { ch.close(); channel.current = null; };
   }, []);
+  // a popped-out description window follows the open lab's description
+  const sendDescription = () => channel.current?.postMessage({ type: "desc", lab: labName || UNTITLED, text: description });
+  useEffect(sendDescription, [description, labName]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const shown = images.filter((i) => i.tag.toLowerCase().includes(filter.toLowerCase()));
   const deployedCount = Object.keys(runtime.nodes).length;
@@ -821,15 +832,28 @@ export default function App() {
         {show.messages && <MessagePane log={log} busy={busy} onClear={clearLog} />}
         </div>
 
-        {show.details && <>
+        {(show.details || show.desc) && <>
         <Splitter dir="v" grow="right" value={layout.right} onChange={(v) => setPaneSize("right", v)}
           min={260} max={() => Math.min(640, window.innerWidth / 2.5)} />
-        <aside className="inspector" style={{ width: layout.right }}>
-          <Inspector selNode={selNode} selEdge={selEdge} nodes={nodes} edges={edges} images={images}
-            updateNode={updateNode} updateEdge={updateEdge} onAction={onNodeAction}
-            onConsole={onConsole} onCapture={onCapture} startupLogs={startupLogs}
-            onDetails={(container) => openManage("containers", { kind: "container", id: container })}
-            engine={engine} labName={labName || UNTITLED} savedName={savedName} description={description} setDescription={setDescription} />
+        <aside className="right-col" style={{ width: layout.right }}>
+          {show.details && <div className="inspector" style={show.desc ? undefined : { flex: 1 }}>
+            <Inspector selNode={selNode} selEdge={selEdge} nodes={nodes} edges={edges} images={images}
+              updateNode={updateNode} updateEdge={updateEdge} onAction={onNodeAction}
+              onConsole={onConsole} onCapture={onCapture} startupLogs={startupLogs}
+              onDetails={(container) => openManage("containers", { kind: "container", id: container })}
+              engine={engine} labName={labName || UNTITLED} savedName={savedName} descInPane={show.desc}
+              description={description} setDescription={setDescription} />
+          </div>}
+          {show.details && show.desc && (
+            <Splitter dir="h" grow="below" value={descHeight} onChange={(v) => setPaneSize("desc", v)}
+              min={120} max={() => window.innerHeight - 220} />
+          )}
+          {show.desc && (
+            <div className="desc-pane" style={show.details ? { height: descHeight } : { flex: 1 }}>
+              <Description key={savedName || "untitled"} value={description} onChange={setDescription}
+                title={labName || UNTITLED} label={`${labName || UNTITLED}: description`} onPopOut={popOutDescription} />
+            </div>
+          )}
         </aside>
         </>}
         </div>

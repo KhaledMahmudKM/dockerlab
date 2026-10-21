@@ -59,7 +59,7 @@ function Expanded({ value, onChange, title, onClose }) {
 }
 
 /** The lab's description in the Details pane: read it, or edit it as Markdown. */
-export default function Description({ value, onChange, title }) {
+export default function Description({ value, onChange, title, label = "Description", onPopOut }) {
   const [mode, setMode] = useState(() => (value.trim() ? "read" : "edit"));
   const [big, setBig] = useState(false);
   const empty = !value.trim();
@@ -67,12 +67,14 @@ export default function Description({ value, onChange, title }) {
   return (
     <section className="desc-section">
       <div className="desc-head">
-        <span className="desc-label">Description</span>
+        <span className="desc-label" title={label}>{label}</span>
         <div className="seg seg-small" role="tablist" aria-label="Description view">
           <button role="tab" aria-selected={mode === "read"} className={mode === "read" ? "is-on" : ""} onClick={() => setMode("read")}>Read</button>
           <button role="tab" aria-selected={mode === "edit"} className={mode === "edit" ? "is-on" : ""} onClick={() => setMode("edit")}>Edit</button>
         </div>
         <button className="mini" onClick={() => setBig(true)} title="Edit in a large window, with a preview">Expand</button>
+        {onPopOut && <button className="mini" onClick={onPopOut} aria-label="Open in a new window"
+          title="Open the description in a browser window of its own, e.g. beside DockerLab or on a second screen">↗</button>}
       </div>
       {mode === "edit" ? (
         <>
@@ -88,5 +90,32 @@ export default function Description({ value, onChange, title }) {
       )}
       {big && <Expanded value={value} onChange={onChange} title={title} onClose={() => setBig(false)} />}
     </section>
+  );
+}
+
+
+/** The description alone, in a browser window of its own (?tool=description). The main
+ *  window sends it the open lab's description over the BroadcastChannel, as it changes. */
+export function DescriptionWindow() {
+  const [d, setD] = useState({ lab: "", text: "" });
+  const [linked, setLinked] = useState(false);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("dockerlab");
+    ch.onmessage = (e) => { if (e.data?.type === "desc") { setD({ lab: e.data.lab, text: e.data.text }); setLinked(true); } };
+    ch.postMessage({ type: "desc-request" });
+    return () => ch.close();
+  }, []);
+  useEffect(() => { document.title = `${d.lab || "Lab"} · description · DockerLab`; }, [d.lab]);
+  return (
+    <div className="standalone desc-window">
+      <header className="standalone-bar">
+        <b>DockerLab</b><span>{d.lab || "Lab description"}</span>
+        <small>{linked ? "Follows the lab open in the main window. Edit it there." : "Waiting for the main DockerLab window…"}</small>
+      </header>
+      <div className="desc-window-body">
+        {d.text.trim() ? <Markdown text={d.text} /> : <p className="hint">{linked ? "This lab has no description yet." : ""}</p>}
+      </div>
+    </div>
   );
 }

@@ -402,7 +402,7 @@ function plannedIfaceText(node, nodes, edges) {
 
 export default function Inspector({
   selNode, selEdge, nodes, edges, updateNode, updateEdge, onAction, onConsole, onCapture, onDetails,
-  images, engine, labName, savedName, startupLogs, description, setDescription,
+  images, engine, labName, savedName, startupLogs, description, setDescription, descInPane,
 }) {
   if (selNode?.type === "note") return (
     <>
@@ -439,8 +439,9 @@ export default function Inspector({
     <div className="lab-panel">
       <header className="insp-head">
         <h2>{labName || "Untitled lab"}</h2>
+        {descInPane && <p>Click a container, switch, cable or note on the topology to see and change its settings here.</p>}
       </header>
-      <Description key={savedName || "untitled"} value={description} onChange={setDescription} title={labName || "Untitled lab"} />
+      {!descInPane && <Description key={savedName || "untitled"} value={description} onChange={setDescription} title={labName || "Untitled lab"} />}
     </div>
   );
 }

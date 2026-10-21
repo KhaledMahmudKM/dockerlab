@@ -6,6 +6,7 @@ The Docker host is chosen in the app (see connection.py), or by DOCKER_HOST, e.g
 from __future__ import annotations
 
 import asyncio
+import logging
 import io
 import json
 import re
@@ -52,15 +53,32 @@ async def lifespan(_app):
     if os.environ.get("DOCKERLAB_KEEP_RUNNING") == "1":
         print("DockerLab: leaving lab containers running (DOCKERLAB_KEEP_RUNNING=1).", flush=True)
         return
-    try:
-        r = await asyncio.wait_for(asyncio.to_thread(lambda: deployer.stop_everything(client())), timeout=20)
+    if not await asyncio.to_thread(connection.reachable):
+        print(f"DockerLab: the Docker host ({connection.active()}) isn't reachable, so its lab containers "
+              "were left as they are.", flush=True)
+        return
+    # in a daemon thread, so a host that stops answering half-way can't keep DockerLab from exiting
+    out: dict = {}
+
+    def stop():
+        try:
+            out["r"] = deployer.stop_everything(client())
+        except Exception as e:  # noqa: BLE001
+            out["e"] = getattr(e, "detail", None) or str(e) or type(e).__name__
+
+    t = threading.Thread(target=stop, daemon=True)
+    t.start()
+    await asyncio.to_thread(t.join, 20)
+    if "r" in out:
+        r = out["r"]
         if r["stopped"]:
-            print(f"DockerLab: stopped {r['stopped']} containers in {', '.join(r['labs'])}.", flush=True)
+            n = r["stopped"]
+            print(f"DockerLab: stopped {n} container{'s' if n != 1 else ''} in {', '.join(r['labs'])}.", flush=True)
         for e in r["errors"]:
             print(f"DockerLab: couldn't stop {e}", flush=True)
-    except Exception as e:  # noqa: BLE001 — never block exit
-        detail = getattr(e, "detail", None) or str(e) or type(e).__name__
-        print(f"DockerLab: couldn't stop lab containers on exit ({detail}).", flush=True)
+    else:
+        print(f"DockerLab: couldn't stop lab containers on exit ({out.get('e', 'the Docker host stopped answering')}).",
+              flush=True)
 
 
 connection.init()                              # DOCKER_HOST from the environment, or the saved host
@@ -117,6 +135,12 @@ def reset_client() -> None:
 NOT_CONNECTED = "Not connected to a Docker host. Press Connect in the Docker Host pane."
 
 
+def _quick_ping(c: docker.DockerClient) -> None:
+    """Docker's ping, but giving up after 5 s: a switched-off VM never answers, and the
+    client's normal timeout (60 s) would leave every request hanging that long."""
+    c.api._raise_for_status(c.api._get(c.api._url("/_ping"), timeout=5))
+
+
 def _short(e: Exception) -> str:
     """One line for the UI and the log, without the traceback."""
     msg = (getattr(e, "explanation", None) or str(e) or type(e).__name__).strip()
@@ -131,7 +155,7 @@ def client() -> docker.DockerClient:
     with _lock:
         if _client is not None:
             try:
-                _client.ping()
+                _quick_ping(_client)
                 return _client
             except Exception:
                 try:
@@ -139,9 +163,12 @@ def client() -> docker.DockerClient:
                 except Exception:  # noqa: BLE001
                     pass
                 _client = None
+        if not connection.reachable(3):
+            raise HTTPException(503, f"The Docker host ({os.environ.get('DOCKER_HOST', '')}) doesn't answer. "
+                                     "Is the VM running, and is this still its address?")
         try:
             _client = new_client()
-            _client.ping()
+            _quick_ping(_client)
             return _client
         except Exception as e:  # noqa: BLE001 — over SSH, a lost host raises paramiko/socket errors, not DockerException
             _client = None
@@ -900,10 +927,31 @@ if __name__ == "__main__":
     print(f"DockerLab: "
           f"DOCKER_HOST={os.environ.get('DOCKER_HOST', '(not set: local Docker)')}", flush=True)
     try:
-        Server(uvicorn.Config(app, host=host, port=port)).run()
+        # Requests still waiting on an unreachable Docker host get 3 seconds, then are cancelled
+        config = uvicorn.Config(app, host=host, port=port, timeout_graceful_shutdown=3)
+
+        class QuietCancel(logging.Filter):
+            """Requests cancelled at shutdown aren't errors: drop their tracebacks."""
+            def filter(self, record):
+                if record.exc_info and isinstance(record.exc_info[1], asyncio.CancelledError):
+                    return False
+                if "timeout graceful shutdown exceeded" in record.getMessage():
+                    print("DockerLab: gave up on requests still waiting for the Docker host.", flush=True)
+                    return False
+                return True
+
+        logging.getLogger("uvicorn.error").addFilter(QuietCancel())
+        Server(config).run()
     except KeyboardInterrupt:
         # uvicorn re-raises a handled Ctrl+C after shutting down; only report the
         # case where it arrived before uvicorn's handler was installed
         if not HANDLED:
             print(f"DockerLab: received SIGINT {time.monotonic() - T0:.1f}s after start, while starting up; stopped.",
                   flush=True)
+    finally:
+        # Worker threads may still be blocked on an SSH connection to a host that's gone
+        # (a VM that was switched off). Python would wait for them before exiting, so the
+        # window wouldn't close; everything worth saving is saved, so leave right away.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)

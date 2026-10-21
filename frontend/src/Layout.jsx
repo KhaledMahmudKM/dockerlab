@@ -5,11 +5,12 @@ export const PANES = [
   { id: "host", label: "Docker Host", hint: "left, top" },
   { id: "shelf", label: "Add and Images", hint: "left, below Docker Host" },
   { id: "messages", label: "Messages", hint: "under the topology" },
-  { id: "details", label: "Details", hint: "right" },
+  { id: "details", label: "Details", hint: "right: what you click on the topology" },
+  { id: "desc", label: "Lab description", hint: "right, below Details: stays while you work" },
 ];
 const DEFAULTS = {
-  show: { shelf: true, host: true, messages: true, details: true },
-  left: 236, right: 320,
+  show: { shelf: true, host: true, messages: true, details: true, desc: true },
+  left: 236, right: 320, desc: null,      // desc: height of the description pane; null = about half
 };
 
 const load = () => {
