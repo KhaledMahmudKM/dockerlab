@@ -38,6 +38,8 @@ export const api = {
   vmContainers: () => call("GET", "/vm/containers"),
   vmRemoveContainer: (id) => call("DELETE", `/vm/containers/${id}`),
   vmImages: () => call("GET", "/vm/images"),
+  vmLoad: () => call("GET", "/vm/load"),
+  vmLoadContainers: () => call("GET", "/vm/load/containers"),
   vmRemoveImage: (tag) => call("DELETE", `/vm/images/${tag.split("/").map(encodeURIComponent).join("/")}`),
   vmPrune: () => call("POST", "/vm/images/prune"),
   vmImage: (ref) => call("GET", `/vm/image?ref=${encodeURIComponent(ref)}`),

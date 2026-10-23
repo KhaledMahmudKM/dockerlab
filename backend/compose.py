@@ -5,6 +5,10 @@ The result runs with plain `docker compose up -d`. Differences from DockerLab it
   containers to Docker's default `bridge` with service aliases).
 - Startup commands are kept under `x-dockerlab-startup` for reference; Compose
   ignores `x-` keys, so run them yourself after `up`.
+- Images DockerLab built (Router, Host, the example labs' images...) can't be pulled from
+  anywhere: their Dockerfiles are written into the file (`build: dockerfile_inline`), so
+  `docker compose up` builds them on the new host (Compose 2.17 or newer). `pull_policy:
+  build` makes sure Compose never pulls an unrelated image of the same name instead.
 - Docker gets the lab's own subnets here (Compose can't set addresses after start),
   so they must not overlap other networks on that engine. Docker's gateway address
   is moved to a free one, so the lab can keep .1.
@@ -14,7 +18,21 @@ from __future__ import annotations
 import yaml
 
 import deployer
+import images
 from models import Topology
+
+
+class _Dumper(yaml.SafeDumper):
+    """Multi-line text (Dockerfiles, the description) as readable | blocks."""
+
+
+def _str(dumper, data):
+    if "\n" in data:
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+
+_Dumper.add_representer(str, _str)
 
 
 def to_compose(topo: Topology) -> str:
@@ -48,6 +66,10 @@ def to_compose(topo: Topology) -> str:
             "stdin_open": True,
             "cap_add": ["NET_ADMIN", "NET_RAW"],
         }
+        recipe = topo.images.get(images.full_tag(node.image))
+        if recipe:                                   # built by DockerLab: build it there too
+            svc["build"] = {"context": ".", "dockerfile_inline": recipe if recipe.endswith("\n") else recipe + "\n"}
+            svc["pull_policy"] = "build"
         if node.command.strip():
             svc["command"] = node.command
         if node.privileged:
@@ -91,6 +113,9 @@ def to_compose(topo: Topology) -> str:
     header = (f"# DockerLab lab '{lab}' exported for docker compose.\n"
               f"# Run: docker compose -f {lab}.compose.yaml up -d\n"
               "# Interface names (eth0, nat0, ...) need Docker 28 or newer.\n")
+    if any("build" in svc for svc in services.values()):
+        header += ("# Images built by DockerLab are built here too, from the Dockerfiles below\n"
+                   "# (needs Docker Compose 2.17 or newer, and internet access while building).\n")
     if startup:
         header += "# Startup commands are listed under x-dockerlab-startup; run them after 'up'.\n"
-    return header + yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
+    return header + yaml.dump(doc, Dumper=_Dumper, sort_keys=False, default_flow_style=False, allow_unicode=True, width=1000)

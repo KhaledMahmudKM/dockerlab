@@ -7,6 +7,7 @@ import { api, engineHost, openConsole, openVmConsole } from "./api.js";
 import { CableEdge, ContainerNode, NoteNode, RuntimeContext, SwitchNode, cableSlots } from "./canvas.jsx";
 import Inspector from "./Inspector.jsx";
 import Description from "./Description.jsx";
+import HostLoad from "./HostLoad.jsx";
 import { ChoiceDialog, NameDialog, RunningPanel, sameLab } from "./Running.jsx";
 import BuildPanel from "./Build.jsx";
 import ManagePanel from "./Manage.jsx";
@@ -153,6 +154,10 @@ export default function App() {
   const refreshEngine = useCallback(async () => {
     try {
       const s = await api.status();
+      if (!s.connected) {                                   // no Docker host chosen yet
+        setEngine({ state: "none" }); setImages([]); lastEngine.current = "none";
+        return;
+      }
       setEngine({ state: "up", ...s });
       if (lastEngine.current !== "up") say("info", `Connected to Docker ${s.server_version} on ${engineHost(s.docker_host)}.`);
       lastEngine.current = "up";
@@ -725,6 +730,7 @@ export default function App() {
                 title={`Open a terminal on the Docker host, ${engine.vm}`}>Console</button>
             )}
           </div>
+          <HostLoad on={engine.state === "up"} />
           </div>}
           {show.shelf && <div className="shelf">
           <h2>Add</h2>

@@ -30,6 +30,7 @@ import compose
 import connection
 import deployer
 import hostfw
+import hostload
 import netadmin
 import paths
 import images as labimages
@@ -227,6 +228,9 @@ def disconnect():
 # ---------------------------------------------------------------- engine
 @app.get("/api/status")
 def status():
+    if connection.active() is None:
+        # not an error: the user hasn't connected yet (nothing is contacted)
+        return {"connected": False}
     c = client()
     try:
         v = c.version()
@@ -525,6 +529,37 @@ def vm_remove_network(nid: str, disconnect: bool = False):
 @app.post("/api/vm/networks/prune")
 def vm_prune_networks(scope: str = "dockerlab"):
     return netadmin.prune(client(), "all" if scope == "all" else "dockerlab")
+
+
+@app.get("/api/vm/load")
+def vm_load():
+    """CPU and memory of the Docker host, for the Docker Host pane."""
+    if connection.active() is None:
+        raise HTTPException(503, NOT_CONNECTED)
+    try:
+        return hostload.load()
+    except Exception as e:  # noqa: BLE001 — a host that went away: say so in one line
+        raise HTTPException(503, f"Couldn't read the Docker host's load: {_short(e)}")
+
+
+@app.get("/api/vm/load/containers")
+def vm_load_containers():
+    """CPU and memory per running container, busiest first, with their lab and node."""
+    if connection.active() is None:
+        raise HTTPException(503, NOT_CONNECTED)
+    try:
+        rows = hostload.containers()
+        labels = {c.name: c.labels for c in client().containers.list()}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(503, f"Couldn't read the containers' load: {_short(e)}")
+    for r in rows:
+        lb = labels.get(r["name"], {})
+        lab = lb.get(deployer.LABEL)
+        prefix = f"dl-{lab}-"
+        r["lab"], r["node"] = lab, (r["name"][len(prefix):] if lab and r["name"].startswith(prefix) else None)
+    return {"containers": rows}
 
 
 @app.get("/api/vm/interfaces")

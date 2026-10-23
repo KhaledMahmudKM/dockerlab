@@ -590,3 +590,22 @@ button.primary.attention::after { content: ""; position: absolute; top: -4px; ri
 .desc-pane .desc-label { flex-basis: 100%; font-size: 15px; color: var(--ink); }
 .desc-head .seg { flex: none; }
 .desc-pane .desc-head .seg { margin-right: auto; }
+
+/* Docker host load, in the Docker Host pane */
+.host-load { padding: 0 16px 10px; font-size: 12.5px; }
+.load-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; margin: 3px 0; }
+.load-label { color: var(--ink-3); font-weight: 700; font-size: 11.5px; }
+.load-bar { height: 8px; border-radius: 4px; background: var(--field); border: 1px solid var(--rule); overflow: hidden; }
+.load-fill { display: block; height: 100%; transition: width .4s; }
+.load-ok { background: var(--run); } .load-mid { background: #D99A1E; } .load-high { background: var(--err); }
+.load-text { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.load-warn { margin: 4px 0 0; padding: 3px 6px; border-radius: 3px; background: #FDF1D2; color: #6B4600; font-weight: 700; }
+.load-note { margin: 0; padding: 0 16px 10px; color: var(--ink-3); font-size: 12.5px; }
+.host-load .load-note { padding: 2px 0 0; }
+button.load-toggle { padding: 4px 0 0; font-size: 12.5px; }
+.load-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.load-table th { text-align: right; font-weight: 700; color: var(--ink-3); font-size: 11.5px; padding: 2px 0 2px 8px; }
+.load-table th:first-child, .load-table td:first-child { text-align: left; padding-left: 0; }
+.load-table td { text-align: right; padding: 2px 0 2px 8px; border-top: 1px solid var(--rule); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.load-table td:first-child { overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.load-table small { color: var(--ink-3); }

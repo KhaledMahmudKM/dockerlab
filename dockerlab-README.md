@@ -41,7 +41,14 @@ DockerLab starts without connecting. Press **Connect…** in the Docker Host pan
 1. **Trust the host's key.** DockerLab shows the VM's SSH key fingerprint, like `ssh` does the first time. Trust it, and it's saved in your `known_hosts`. If the key ever changes (for example after re-importing the VM), DockerLab says so, in red, and asks before replacing it.
 2. **The user's password, once.** DockerLab logs in with it to install your SSH key (creating `~/.ssh/id_ed25519` if you have none), adds the user to the `docker` group if needed, and, with *Also allow packet capture* ticked, adds a sudo rule so `tcpdump` and `iptables` run without a password (in `/etc/sudoers.d/dockerlab`). The password isn't stored; from then on, DockerLab logs in with the key.
 
-DockerLab remembers the host (in `~/.dockerlab/settings.json`), so next time the Connect dialog is already filled in, and recent hosts are one click away. It connects only when you press **Connect**, unless you tick *Connect to it automatically when DockerLab starts*. Since the VM's address comes from DHCP, check it on the VM's console if connecting fails after a restart. The **Docker Host** pane at the top left shows the connection, e.g. *Docker 29.6.2 on 192.168.56.103*. DockerLab checks it on its own; if the host can't be reached, **Retry** checks again once you've fixed it. **Change…** to connect elsewhere (recent hosts are one click away) or disconnect, and **Console** for a terminal on the host. *On this computer* uses a Docker engine on the PC itself, such as Docker Desktop. Switching hosts while labs run asks whether to stop them first.
+DockerLab remembers the host (in `~/.dockerlab/settings.json`), so next time the Connect dialog is already filled in, and recent hosts are one click away. It connects only when you press **Connect**, unless you tick *Connect to it automatically when DockerLab starts*. Since the VM's address comes from DHCP, check it on the VM's console if connecting fails after a restart. The **Docker Host** pane at the top left shows the connection, e.g. *Docker 29.6.2 on 192.168.56.103*. DockerLab checks it on its own, and notices within a few seconds if the VM is switched off or unreachable; **Retry** checks again once you've fixed it, and DockerLab also reconnects by itself when the VM is back. **Change…** to connect elsewhere (recent hosts are one click away) or disconnect, and **Console** for a terminal on the host.
+
+Below that, the pane shows how busy the Docker host is, updated every 5 seconds:
+
+- **CPU**: all of the host's CPUs together (hover for the load average). **RAM**: memory in use, not counting what Linux would free from its caches. The bars turn amber at 70% and red at 90%. If the host runs out of memory and starts swapping, a warning says how much: everything gets slow then, so stop a lab or give the VM more memory.
+- **▸ Per container** lists what each running container uses, busiest first, with its lab. Here 100% means one full CPU, so a container can show more on a host with several CPUs. It's measured only while the list is open, because `docker stats` takes a second each time.
+
+The figures come from the host's own counters (`/proc`), read over one SSH connection that stays open, so watching them doesn't log in to the VM every few seconds. With Docker Desktop, Docker runs in a VM DockerLab can't look into, so the load isn't shown. *On this computer* uses a Docker engine on the PC itself, such as Docker Desktop. Switching hosts while labs run asks whether to stop them first.
 
 If you set up key login yourself, nothing is asked. A `DOCKER_HOST` environment variable, if set, still wins at startup, for scripted setups.
 
@@ -63,12 +70,14 @@ Your labs are saved in **`Documents\DockerLab\labs`** (one `.json` file per lab)
 - **Add a note:** drag *Note* from the top of the shelf. Double-click it to write on it; drag it to move; drag a corner to resize. Click it to change its colour or edit its text in the right pane. Notes are saved with the lab and ignored by Deploy.
 - **Add a switch:** drag *Switch* from the top of the shelf. Every container cabled to it shares one segment (subnet), like a real Ethernet switch.
 - **Connect:** hover a container, then drag from one of the small circles on its edge to another container or to a switch.
-- **Describe the lab:** click an empty spot on the bench. The right pane shows the lab's *Description*, saved with the lab, for its purpose and tasks.
+- **Describe the lab:** write in the *Lab description* pane at the bottom right. It's saved with the lab, for its purpose and tasks.
 
 ### Lab descriptions
 
 A lab's description is written in **Markdown** and shown formatted, so it can hold a whole worksheet: headings, tables of addresses, numbered steps, commands, checklists and callouts.
 
+- It has a pane of its own, below Details, so the instructions stay in view while students click containers, open consoles and capture cables. Drag the divider between the two to share the height. Hide the pane with *View*, and the description shows in Details again when nothing is selected.
+- **↗** opens it in a browser window of its own, to put beside DockerLab or on a second screen (or a projector). That window follows the lab open in DockerLab, including edits as you type; edit it in the main window.
 - **Read** shows it formatted; **Edit** shows the Markdown (double-click the text to switch). **Expand** opens a large window with the Markdown on the left and the result on the right.
 - In the editor, Ctrl+B, Ctrl+I and Ctrl+E make the selection bold, italic or `code`. *Markdown*, under the editor, lists the syntax.
 - Commands in a fenced block (between two lines of three backticks) get a **Copy** button, so students can paste them into a console.
@@ -116,14 +125,15 @@ Typing a new name into the box and saving makes a copy under the new name; the o
 
 ### Panes
 
-The window has six panes: the top bar and the topology (always shown), and four you can hide with **View** at the top right:
+The window has seven panes: the top bar and the topology (always shown), and five you can hide with **View** at the top right:
 
 | Pane | Where | Holds |
 |---|---|---|
 | Docker Host | left, top | the Docker engine's status, Change… and the Console button |
 | Add and Images | left, below Docker Host | Switch, Note and the images to drag onto the bench; Manage and Build |
 | Messages | under the topology | the message log (below) |
-| Details | right | settings of the selected container, switch, cable or note, or the lab's description |
+| Details | right, top | settings of the container, switch, cable or note you click |
+| Lab description | right, below Details | the lab's description, which stays in view while you click around the topology |
 
 Drag a divider between panes to resize them; double-click it to return to the default size. *Show all panes at their default sizes*, in View, undoes everything. Your choice is remembered in this browser. If an error comes in while Messages is hidden, View gets a red dot, and while an action runs its progress shows in the top bar instead.
 
@@ -153,7 +163,7 @@ Containers run in the VM, independently of DockerLab, so DockerLab helps you kee
 
 - **Switching labs:** if the open lab is running when you Open another lab or press New, DockerLab asks whether to stop it first (*Stop*, *Keep running* or *Cancel*). Several labs can run at once if you choose *Keep running*.
 - **Running indicator:** the toolbar button on the right shows how many labs are running. Click it for every running container in the VM, grouped by lab, with *Open* and *Stop* for each lab. Containers that don't belong to DockerLab, such as GNS3's own Docker nodes, are listed under *Outside DockerLab*; DockerLab never stops those.
-- **Exiting DockerLab:** pressing Ctrl+C in DockerLab's window stops every DockerLab container in the VM before it quits, and prints what it stopped. Set `DOCKERLAB_KEEP_RUNNING=1` to leave them running instead. Closing the window with its X button may not leave enough time to stop them, so prefer Ctrl+C.
+- **Exiting DockerLab:** pressing Ctrl+C in DockerLab's window stops every DockerLab container in the VM before it quits, and prints what it stopped. Set `DOCKERLAB_KEEP_RUNNING=1` to leave them running instead. Closing the window with its X button may not leave enough time to stop them, so prefer Ctrl+C. If the VM is already off or unreachable, DockerLab says so and quits within a few seconds, leaving the containers as they are (they're stopped anyway when the VM is).
 
 **Console:** double-click a running container, or click it and press *Console*. A terminal window opens in the browser, running `bash` if the image has it and `sh` otherwise. Open as many as you like. If the container stops, the window says *Disconnected*; press *Reconnect* after starting it again.
 
@@ -256,7 +266,9 @@ The images the labs build: *dockerlab/host* (end host tools), *dockerlab/router*
 
 ### Export to docker-compose
 
-*Export compose* downloads `<lab>.compose.yaml`, which recreates the lab with `docker compose -f <lab>.compose.yaml up -d` on any Docker host, for example to hand a finished lab to students. Two differences from DockerLab: internet access uses a network called `nat` instead of Docker's default bridge, and startup commands are listed under `x-dockerlab-startup` (Compose ignores that section, so run them yourself after `up`).
+*Export compose* downloads `<lab>.compose.yaml`, which recreates the lab with `docker compose -f <lab>.compose.yaml up -d` on any Docker host, for example to hand a finished lab to students. Images that DockerLab built, such as `dockerlab/host` or the example labs' images, exist only on the VM that built them, so the file carries their Dockerfiles (`build:` with `dockerfile_inline`) and Compose builds them on the new host; that needs Docker Compose 2.17 or newer, and internet access while building. `pull_policy: build` keeps Compose from pulling an unrelated image of the same name from Docker Hub instead. Images from a registry (`alpine:3.20`, `nginx:alpine`) are pulled as usual.
+
+Two differences from DockerLab: internet access uses a network called `nat` instead of Docker's default bridge, and startup commands are listed under `x-dockerlab-startup` (Compose ignores that section, so run them yourself after `up`).
 
 ## How a lab maps to Docker
 
@@ -296,6 +308,7 @@ backend/
   connection.py    which Docker host to use; first-connection setup (host key, SSH key, sudo rule)
   vmshell.py       SSH shell and commands on the Docker host, for its Console
   hostfw.py        keeps the Docker host's firewall from dropping routed lab traffic
+  hostload.py      CPU and memory of the Docker host, and per container
   vmadmin.py       container and image inventory, deletes, lab recovery
   netadmin.py      Docker networks: list, inspect, create, delete, clean up
   models.py        topology data model (validated with pydantic)
@@ -311,7 +324,7 @@ To work on the UI: `cd frontend`, `npm install`, `npm run dev` (with the backend
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/api/status` | engine connection and version |
+| GET | `/api/status` | engine connection and version; `{"connected": false}` before you connect |
 | GET | `/api/images` | images on the engine |
 | GET | `/api/images/templates` | Dockerfile starting points for *Build* |
 | POST | `/api/images/build` | `{"tag": "dockerlab/router:latest", "dockerfile": "..."}`; returns `ok`, and `error` and `log` on failure |
