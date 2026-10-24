@@ -511,7 +511,7 @@ button.primary.attention::after { content: ""; position: absolute; top: -4px; ri
 .nets-list li.is-builtin .m-name .link { color: var(--ink-2); }
 .m-name .link { padding: 0; font-weight: 700; text-align: left; white-space: normal; }
 .m-name .tag { margin-left: 6px; }
-.m-actions-row { display: flex; gap: 6px; }
+.m-actions-row { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .link.danger { color: var(--err); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
@@ -609,3 +609,6 @@ button.load-toggle { padding: 4px 0 0; font-size: 12.5px; }
 .load-table td { text-align: right; padding: 2px 0 2px 8px; border-top: 1px solid var(--rule); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .load-table td:first-child { overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
 .load-table small { color: var(--ink-3); }
+.d-actions { display: inline-flex; gap: 6px; margin-left: 12px; vertical-align: middle; font-size: 13px; font-weight: 400; }
+.crumbs { margin: 0 0 6px; font-size: 13px; }
+.crumbs .link { padding: 0; }

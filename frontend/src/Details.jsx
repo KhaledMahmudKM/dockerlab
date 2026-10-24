@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "./api.js";
+import { api, openContainerConsole } from "./api.js";
 
 // ---------------------------------------------------------------- helpers
 const when = (s) => {
@@ -70,8 +70,8 @@ function useLoad(fn, deps) {
 }
 
 // ---------------------------------------------------------------- container
-export function ContainerDetails({ id, onBack, onNetwork, onImage }) {
-  const { data: full, error } = useLoad(() => api.vmInspectContainer(id), [id]);
+export function ContainerDetails({ id, onBack, onNetwork, onImage, onVolume, onAction, rev = 0, busy }) {
+  const { data: full, error } = useLoad(() => api.vmInspectContainer(id), [id, rev]);
   if (error) return <div className="details"><button className="link" onClick={onBack}>← Back</button><p className="conn-error">{error}</p></div>;
   if (!full) return <div className="details"><p className="hint">Loading…</p></div>;
   const { DockerLabInside, ...a } = full;     // raw JSON shows exactly what docker inspect does
@@ -94,7 +94,15 @@ export function ContainerDetails({ id, onBack, onNetwork, onImage }) {
     <div className="details">
       <button className="link" onClick={onBack}>← Back</button>
       <header className="d-head">
-        <h2><span className={`dot ${st.Running ? "on" : ""}`} /> {name}</h2>
+        <h2><span className={`dot ${st.Running ? "on" : ""}`} /> {name}
+          <span className="d-actions">
+            {st.Running && <button className="mini" onClick={() => openContainerConsole(a.Id, name)}
+              title="Open a shell in this container">Console</button>}
+            {onAction && (st.Running ? <>
+              <button className="mini" disabled={busy} onClick={() => onAction({ id: a.Id, name }, "restart")}>Restart</button>
+              <button className="mini" disabled={busy} onClick={() => onAction({ id: a.Id, name }, "stop")}>Stop</button>
+            </> : <button className="mini" disabled={busy} onClick={() => onAction({ id: a.Id, name }, "start")}>Start</button>)}
+          </span></h2>
         <p><button className="link inline" onClick={() => onImage?.(a.Image || cfg.Image)}>{cfg.Image}</button> · {short(a.Id)}{isLab ? ` · lab ${labels["dockerlab.lab"]}, node ${labels["dockerlab.node"] ?? "?"}` : ""}</p>
       </header>
 
@@ -143,7 +151,9 @@ export function ContainerDetails({ id, onBack, onNetwork, onImage }) {
 
       <Section title="Storage">
         <Table head={["Type", "Source (Docker host)", "In the container", "Access"]}
-          rows={(a.Mounts || []).map((m) => [m.Type, m.Name || m.Source, m.Destination, m.RW ? "read-write" : "read-only"])}
+          rows={(a.Mounts || []).map((m) => [m.Type,
+            m.Type === "volume" && onVolume ? <button className="link" onClick={() => onVolume(m.Name)}>{m.Name.length === 64 ? short(m.Name) : m.Name}</button> : (m.Name || m.Source),
+            m.Destination, m.RW ? "read-write" : "read-only"])}
           empty="No volumes or bind mounts." />
       </Section>
 
@@ -378,6 +388,120 @@ export function NetworkForm({ onBack, onCreated }) {
       {error && <p className="conn-error" role="alert">{error}</p>}
       <div className="dialog-actions">
         <button type="submit" className="primary" disabled={busy || !f.name.trim()}>{busy ? "Creating…" : "Create network"}</button>
+        <button type="button" onClick={onBack} disabled={busy}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------- volumes
+const bytes = (n) => (n == null || n < 0 ? "" : n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} KB`
+  : n < 1 << 30 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${(n / (1 << 30)).toFixed(2)} GB`);
+export const volumeSize = bytes;
+
+/** The folders and files in a volume, read through a helper container. */
+function VolumeFiles({ name }) {
+  const [path, setPath] = useState("");
+  const { data, error } = useLoad(() => api.vmVolumeFiles(name, path), [name, path]);
+  const parts = path.split("/").filter(Boolean);
+  const go = (p) => setPath(p);
+  return (
+    <div className="vol-files">
+      <p className="crumbs">
+        <button className="link" onClick={() => go("")}>{name}</button>
+        {parts.map((p, i) => <span key={i}> / <button className="link" onClick={() => go(parts.slice(0, i + 1).join("/"))}>{p}</button></span>)}
+      </p>
+      {error ? <p className="conn-error">{error}</p>
+        : !data ? <p className="hint">Reading…</p>
+        : <Table head={["Name", "Size", "Modified"]} empty="Empty."
+            rows={data.entries.map((e) => [
+              e.type === "d" ? <button className="link" onClick={() => go([...parts, e.name].join("/"))}>{e.name}/</button>
+                : e.type === "l" ? <span title="symbolic link">{e.name} ↗</span> : e.name,
+              e.type === "d" ? "" : bytes(e.size),
+              when(new Date(e.mtime * 1000).toISOString()),
+            ])} />}
+      {data?.truncated && <p className="hint">Showing the first 500 entries.</p>}
+    </div>
+  );
+}
+
+export function VolumeDetails({ name, onBack, onContainer }) {
+  const { data, error } = useLoad(() => api.vmVolume(name), [name]);
+  if (error) return <div className="details"><button className="link" onClick={onBack}>← Back</button><p className="conn-error">{error}</p></div>;
+  if (!data) return <div className="details"><p className="hint">Loading…</p></div>;
+  const a = data.attrs, opts = a.Options || {}, labels = a.Labels || {};
+  return (
+    <div className="details">
+      <button className="link" onClick={onBack}>← Back</button>
+      <header className="d-head">
+        <h2>{data.anonymous ? short(a.Name) : a.Name}</h2>
+        <p>{a.Driver} volume{data.anonymous ? " · anonymous (Docker made up its name)" : ""}{data.device ? ` · a folder of the host: ${data.device}` : ""}</p>
+      </header>
+
+      <Section title="Overview">
+        <KV rows={[
+          ["Name", data.anonymous ? a.Name : ""],
+          ["Driver", a.Driver],
+          ["Created", when(a.CreatedAt)],
+          ["Files are in", data.device || a.Mountpoint],
+          ["Docker's mount point", data.device ? a.Mountpoint : ""],
+          ["Saved labs that use it", data.labs],
+        ]} />
+        <p className="hint">{data.device
+          ? "The files live in that folder of the Docker host; deleting the volume leaves the folder and its files."
+          : "The files live in Docker's data folder on the host, readable by root (sudo). Deleting the volume deletes them."}</p>
+      </Section>
+
+      <Section title={`Containers (${data.containers.length})`}>
+        <Table head={["Container", "State", "Mounted at", "Access"]}
+          rows={data.containers.map((c) => [
+            <button className="link" onClick={() => onContainer(c.id)}>{c.name}</button>,
+            c.state, <code>{c.target}</code>, c.rw ? "read-write" : "read-only"])}
+          empty="No container uses it." />
+      </Section>
+
+      <Section title="Files">
+        <VolumeFiles name={a.Name} />
+      </Section>
+
+      {Object.keys(opts).length > 0 && <Section title="Options"><KV rows={Object.entries(opts).map(([k, v]) => [k, v])} /></Section>}
+      <Section title="Labels"><KV rows={Object.entries(labels).map(([k, v]) => [k, v])} /></Section>
+      <Raw data={a} />
+    </div>
+  );
+}
+
+export function VolumeForm({ onBack, onCreated }) {
+  const [f, setF] = useState({ name: "", where: "docker", device: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k) => (e) => { setError(""); setF({ ...f, [k]: e.target.value }); };
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError("");
+    try { onCreated(await api.vmCreateVolume({ name: f.name, device: f.where === "folder" ? f.device : "" })); }
+    catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <form className="details net-form" onSubmit={submit}>
+      <button type="button" className="link" onClick={onBack}>← Back</button>
+      <header className="d-head"><h2>New volume</h2></header>
+      <label className="field">Name<input value={f.name} onChange={set("name")} placeholder="e.g. web-site" autoFocus spellCheck={false} /></label>
+      <div className="seg" role="radiogroup" aria-label="Where the files live">
+        <label className={f.where === "docker" ? "is-on" : ""}><input type="radio" name="where" value="docker" checked={f.where === "docker"} onChange={set("where")} /> In Docker's storage</label>
+        <label className={f.where === "folder" ? "is-on" : ""}><input type="radio" name="where" value="folder" checked={f.where === "folder"} onChange={set("where")} /> In a folder of the host</label>
+      </div>
+      {f.where === "docker"
+        ? <p className="hint">The usual kind: Docker keeps the files in its data folder on the host, and deletes them with the volume.</p>
+        : <>
+            <label className="field">Folder on the Docker host<input value={f.device} onChange={set("device")} placeholder="/srv/labs/site" spellCheck={false} /></label>
+            <p className="hint">The folder must already exist. Containers then see its files, and they stay there when the volume is deleted. In a lab, a container's Volumes can also name a host folder directly; a volume gives it a name you can share between labs.</p>
+          </>}
+      {error && <p className="conn-error" role="alert">{error}</p>}
+      <div className="dialog-actions">
+        <button type="submit" className="primary" disabled={busy || !f.name.trim() || (f.where === "folder" && !f.device.trim())}>
+          {busy ? "Creating…" : "Create volume"}</button>
         <button type="button" onClick={onBack} disabled={busy}>Cancel</button>
       </div>
     </form>

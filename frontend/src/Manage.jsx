@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./api.js";
-import { ContainerDetails, ImageDetails, NetworkDetails, NetworkForm } from "./Details.jsx";
+import { api, openContainerConsole } from "./api.js";
+import { ContainerDetails, ImageDetails, NetworkDetails, NetworkForm, VolumeDetails, VolumeForm, volumeSize } from "./Details.jsx";
 
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
@@ -14,6 +14,8 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
   const [note, setNote] = useState(null);           // { kind, text }
   const [pullName, setPullName] = useState("");
   const [nets, setNets] = useState(null);
+  const [vols, setVols] = useState(null);
+  const [volSizes, setVolSizes] = useState({});
   const [view, setView] = useState(null);          // a details page: { kind: "container"|"network"|"new-network", id }
   const [trail, setTrail] = useState([]);          // pages to go Back to
   const show = (v) => { setTrail((t) => (view ? [...t, view] : t)); setView(v); };
@@ -21,11 +23,13 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
 
   const load = useCallback(async () => {
     // independent: one failing must not leave the other list stale
-    const [c, i, n] = await Promise.allSettled([api.vmContainers(), api.vmImages(), api.vmNetworks()]);
+    const [c, i, n, v] = await Promise.allSettled([api.vmContainers(), api.vmImages(), api.vmNetworks(), api.vmVolumes()]);
     if (c.status === "fulfilled") setData(c.value);
     if (i.status === "fulfilled") setImgs(i.value);
     if (n.status === "fulfilled") setNets(n.value);
-    const failed = [c, i, n].find((x) => x.status === "rejected");
+    if (v.status === "fulfilled") setVols(v.value);
+    api.vmVolumeSizes().then(setVolSizes).catch(() => {});   // Docker walks every volume: may take a moment
+    const failed = [c, i, n, v].find((x) => x.status === "rejected");
     if (failed) setNote({ kind: "err", text: failed.reason.message });
   }, []);
 
@@ -43,6 +47,21 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
     if (text) { setNote({ kind: "ok", text }); say?.("ok", text); }
     await load(); onChanged?.();
   };
+
+  const [rev, setRev] = useState(0);               // re-read an open details page after an action
+  const containerAction = (c, action) => act(
+    { start: "Starting", stop: "Stopping", restart: "Restarting" }[action], async () => {
+      const r = await api.vmContainerAction(c.id, action);
+      setRev((v) => v + 1);
+      const done = `${{ start: "Started", stop: "Stopped", restart: "Restarted" }[action]} ${c.name}${r.lab ? ` (lab ${r.lab})` : ""}.`;
+      return r.note ? `${done} ${r.note}` : done;
+    });
+  const runButtons = (c) => (c.state === "running" ? <>
+      <button className="mini" onClick={() => openContainerConsole(c.id, c.name)} title="Open a shell in this container">Console</button>
+      <button className="mini" onClick={() => containerAction(c, "restart")} disabled={!!busy} title="Stop it and start it again">Restart</button>
+      <button className="mini" onClick={() => containerAction(c, "stop")} disabled={!!busy}>Stop</button>
+    </> : <button className="mini" onClick={() => containerAction(c, "start")} disabled={!!busy}
+      title="Start it. A DockerLab container gets its lab addresses and runs its startup commands, as when started from its lab.">Start</button>);
 
   const confirm = (title, body, yes) =>
     ask({ title, body, options: [{ label: yes, value: "yes", kind: "danger" }, { label: "Cancel", value: "no" }] })
@@ -103,6 +122,24 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
     return `Deleted network ${n.name}.`;
   });
 
+  const removeVolume = (v) => act("Deleting", async () => {
+    const files = v.device ? `Its files stay in ${v.device} on the host.` : "Its files are deleted with it, for good.";
+    const labs = v.labs.length ? ` Saved lab${v.labs.length > 1 ? "s" : ""} ${v.labs.join(", ")} use${v.labs.length === 1 ? "s" : ""} it: Deploy creates it again, empty.` : "";
+    const nm = v.anonymous ? v.name.slice(0, 12) : v.name;
+    if (!(await confirm(`Delete volume ${nm}?`, `${files}${labs}`, "Delete volume"))) return "";
+    await api.vmRemoveVolume(v.name);
+    return `Deleted volume ${nm}.`;
+  });
+
+  const pruneVolumes = (scope) => act("Cleaning up", async () => {
+    if (!(await confirm(scope === "all" ? "Delete every unused volume?" : "Delete unused anonymous volumes?",
+      scope === "all" ? "Deletes every volume no container uses, named ones included, with their files. Labs that use a named volume get a new, empty one at their next Deploy."
+        : "Deletes the volumes Docker named itself (from images that declare a VOLUME, or `-v /path`) that no container uses, with their files.",
+      "Delete them"))) return "";
+    const r = await api.vmPruneVolumes(scope);
+    return r.removed.length ? `Removed ${plural(r.removed.length, "volume")}.${r.errors.length ? ` Couldn't remove: ${r.errors.join("; ")}` : ""}` : "Nothing to clean up.";
+  });
+
   const pruneNetworks = (scope) => act("Cleaning up", async () => {
     if (scope === "all" && !(await confirm("Delete every unused network?",
       "Also removes unused networks DockerLab didn't create, e.g. from GNS3 or Docker Compose projects that are down. Docker's built-in networks are kept.", "Delete them"))) return "";
@@ -130,6 +167,8 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
               onClick={() => { setView(null); setTrail([]); setTab("images"); }}>Images{imgs ? ` (${imgs.images.length})` : ""}</button>
             <button role="tab" aria-selected={tab === "networks"} className={tab === "networks" ? "is-on" : ""}
               onClick={() => { setView(null); setTrail([]); setTab("networks"); }}>Networks{nets ? ` (${nets.networks.length})` : ""}</button>
+            <button role="tab" aria-selected={tab === "volumes"} className={tab === "volumes" ? "is-on" : ""}
+              onClick={() => { setView(null); setTrail([]); setTab("volumes"); }}>Volumes{vols ? ` (${vols.volumes.length})` : ""}</button>
           </div>
           <button className="mini refresh" onClick={() => { setNote(null); load(); }} disabled={!!busy} title="Read the lists again">Refresh</button>
         </div>
@@ -138,13 +177,19 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
         {busy && <div className="manage-note busy">{busy}…</div>}
 
         <div className="manage-body">
-          {view?.kind === "container" && <ContainerDetails id={view.id} onBack={back}
+          {view?.kind === "container" && <ContainerDetails id={view.id} onBack={back} rev={rev} busy={!!busy}
+            onAction={(c, action) => containerAction(c, action)}
             onImage={(ref) => show({ kind: "image", id: ref })}
+            onVolume={(name) => show({ kind: "volume", id: name })}
             onNetwork={(id) => show({ kind: "network", id })} />}
           {view?.kind === "image" && <ImageDetails ref_={view.id} onBack={back}
             onContainer={(id) => show({ kind: "container", id })} />}
           {view?.kind === "network" && <NetworkDetails id={view.id} onBack={back}
             onContainer={(id) => show({ kind: "container", id })} />}
+          {view?.kind === "volume" && <VolumeDetails name={view.id} onBack={back}
+            onContainer={(id) => show({ kind: "container", id })} />}
+          {view?.kind === "new-volume" && <VolumeForm onBack={back}
+            onCreated={async (r) => { say?.("ok", `Created volume ${r.created}.`); setNote({ kind: "ok", text: `Created volume ${r.created}.` }); back(); await load(); }} />}
           {view?.kind === "new-network" && <NetworkForm onBack={back}
             onCreated={async (r) => { say?.("ok", `Created network ${r.created}.`); setNote({ kind: "ok", text: `Created network ${r.created}.` }); back(); await load(); }} />}
 
@@ -194,6 +239,47 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
             </>
           )}
 
+          {!view && vols && tab === "volumes" && (
+            <>
+              <div className="m-net-tools">
+                <button className="primary" onClick={() => show({ kind: "new-volume" })} disabled={!!busy}>New volume…</button>
+              </div>
+              {vols.volumes.length === 0 && <p className="hint">There are no volumes on the Docker host. A lab container's Volumes setting, with a name instead of a path (e.g. lab 03-web-volume), creates one at Deploy.</p>}
+              <ul className="m-rows nets-list">
+                {vols.volumes.map((v) => {
+                  const running = v.containers.filter((c) => c.state === "running").length;
+                  const nm = v.anonymous ? v.name.slice(0, 12) : v.name;
+                  return (
+                    <li key={v.name}>
+                      <span className="m-name">
+                        <button className="link" onClick={() => show({ kind: "volume", id: v.name })} title={v.name}>{nm}</button>
+                        {v.anonymous && <span className="tag">anonymous</span>}
+                        {v.device && <span className="tag">host folder</span>}
+                        {v.labs.map((l) => <span key={l} className="tag">lab {l}</span>)}
+                        {!v.containers.length && <span className="tag">unused</span>}
+                      </span>
+                      <span className="m-meta">
+                        {v.device || v.driver}
+                        {volSizes[v.name] >= 0 && ` · ${volumeSize(volSizes[v.name])}`}
+                        {` · ${v.containers.length ? `${plural(v.containers.length, "container")}${running < v.containers.length ? `, ${running} running` : ""}` : "no containers"}`}
+                      </span>
+                      <span className="m-actions-row">
+                        <button className="mini" onClick={() => show({ kind: "volume", id: v.name })}>Details</button>
+                        <button className="mini danger" onClick={() => removeVolume(v)} disabled={!!busy || v.containers.length > 0}
+                          title={v.containers.length ? `Used by ${v.containers.map((c) => c.name).join(", ")}: delete those containers first` : "Delete it"}>Delete</button>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {vols.unused > 0 && (
+                <p className="hint pad-top">{plural(vols.unused, "volume")} not used by any container.{" "}
+                  {vols.volumes.some((v) => v.anonymous && !v.containers.length) && <><button className="link" onClick={() => pruneVolumes("anonymous")} disabled={!!busy}>Delete unused anonymous volumes</button>{" · "}</>}
+                  <button className="link danger" onClick={() => pruneVolumes("all")} disabled={!!busy}>Delete every unused volume…</button></p>
+              )}
+            </>
+          )}
+
           {!view && data && tab === "containers" && (
             <>
               {labs.length === 0 && other.length === 0 && <p className="hint">There are no containers in the VM.</p>}
@@ -223,7 +309,10 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
                         <span className={`dot ${c.state === "running" ? "on" : ""}`} />
                         <span className="m-name"><button className="link" onClick={() => show({ kind: "container", id: c.id })}>{c.name}</button></span>
                         <span className="m-meta">{c.image} · {c.status}</span>
-                        <button className="mini danger" onClick={() => deleteContainer(c, g)} disabled={!!busy}>Delete</button>
+                        <span className="m-actions-row">
+                          {runButtons(c)}
+                          <button className="mini danger" onClick={() => deleteContainer(c, g)} disabled={!!busy}>Delete</button>
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -239,7 +328,10 @@ export default function ManagePanel({ tab, setTab, ask, currentLab, onChanged, o
                         <span className={`dot ${c.state === "running" ? "on" : ""}`} />
                         <span className="m-name"><button className="link" onClick={() => show({ kind: "container", id: c.id })}>{c.name}</button></span>
                         <span className="m-meta">{c.image} · {c.status}</span>
-                        <button className="mini danger" onClick={() => deleteContainer(c, null)} disabled={!!busy}>Delete</button>
+                        <span className="m-actions-row">
+                          {runButtons(c)}
+                          <button className="mini danger" onClick={() => deleteContainer(c, null)} disabled={!!busy}>Delete</button>
+                        </span>
                       </li>
                     ))}
                   </ul>

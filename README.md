@@ -4,11 +4,11 @@ A GNS3-style lab builder for Docker containers. Drag images onto a bench, cable 
 
 ```
 Windows PC                               Docker host VM (VirtualBox)
-┌───────────────────────────┐   SSH     ┌─────────────────────────────┐
-│ browser ─▶ DockerLab      │ ────────▶ │ Docker engine               │
-│ http://127.0.0.1:8000     │           │  dl-<lab>-<node> containers │
-│ (FastAPI + docker SDK)    │           │  one bridge per cable       │
-└───────────────────────────┘           └─────────────────────────────┘
++---------------------------+    SSH    +-----------------------------+
+| browser --> DockerLab     | --------> | Docker engine               |
+| http://127.0.0.1:8000     |           |  dl-<lab>-<node> containers |
+| (FastAPI + docker SDK)    |           |  one bridge per cable       |
++---------------------------+           +-----------------------------+
 ```
 
 ## 1. Prepare the Docker host VM (once)
@@ -92,7 +92,7 @@ A lab's description is written in **Markdown** and shown formatted, so it can ho
 The example labs' descriptions show what it looks like.
 - **Configure a container:** click it to set its name, image, command, interfaces, startup commands, ports, volumes, environment and behaviour.
 - **Interfaces:** like a real router, a container can have a fixed number of cable interfaces, e.g. 4. The bench then refuses a fifth cable, the box shows *2 of 4 interfaces*, and the panel lists the free ones (`eth2 free`). Leave it empty for one interface per cable, with no limit. Changing it needs a Redeploy. The internet interface `nat0` isn't counted. Free interfaces exist only on the bench: inside the container, `ip a` shows only cabled ones.
-- **Network OS:** for router operating systems that expect their own interface names and set their own addresses, such as Nokia SR Linux. *First interface* names the cable interfaces (`e1-1` gives e1-1, e1-2, …; empty means eth0, eth1, …), *NAT interface* renames `nat0` (SR Linux's management port is `eth0`), *DockerLab sets the addresses* off leaves the cable interfaces unaddressed (also right for DHCP clients), and *Kernel settings* adds sysctls such as `net.ipv6.conf.all.disable_ipv6=0`. Lab `12-ospf-srlinux` uses all four.
+- **Network OS:** for router operating systems that expect their own interface names and set their own addresses, such as Nokia SR Linux. *First interface* names the cable interfaces (`e1-1` gives e1-1, e1-2, …; empty means eth0, eth1, …), *NAT interface* renames `nat0` (SR Linux's management port is `eth0`), *DockerLab sets the addresses* off leaves the cable interfaces unaddressed (also right for DHCP clients), and *Kernel settings* adds sysctls such as `net.ipv6.conf.all.disable_ipv6=0`. Lab `12-ospf-srlinux` uses all four. Turning off *DockerLab sets the addresses* on FRR routers also makes an addressing exercise: the interfaces come up empty, the cable labels show the intended addresses, and students set them in `vtysh` (`interface eth1`, `ip address 10.0.12.1/24`, `write memory`); FRR puts them back at every restart.
 - **Configure a cable:** click it to set its subnet and, optionally, a fixed address for each end. Every address is usable, `.1` included.
 - **Configure a switch:** click it to set its name and subnet. Its *Ports* list shows every container plugged in, where you can set each one's address, see its interface and current IP, and capture its port. The lights on the switch show one port per cable, green while that container runs.
 - **Delete:** select and press Delete.
@@ -203,10 +203,11 @@ With the Router image, a gateway's startup commands shrink to one line, `nat-on`
 
 *Manage*, next to *Images* on the shelf (or *All containers and images…* in the running-labs panel), lists everything in the Docker host's engine:
 
-- **Containers**, running or stopped, grouped by lab, plus those not created by DockerLab (*Outside DockerLab*, e.g. GNS3's). Delete single containers, or *Remove* a whole lab's containers and networks. A lab whose containers were deleted needs a Redeploy; its lab file is kept. Deleting a lab's last container also removes its networks.
+- **Containers**, running or stopped, grouped by lab, plus those not created by DockerLab (*Outside DockerLab*, e.g. GNS3's). **Console** opens a shell in any running container, including ones DockerLab didn't create, such as those from a `docker compose` file; **Start**, **Stop** and **Restart** control any container (all also on a container's details page). A DockerLab container is started the way its lab starts it, with the lab's addresses and its startup commands; if its lab file is missing, it starts with Docker's internal addresses, and DockerLab says so. Delete single containers, or *Remove* a whole lab's containers and networks. A lab whose containers were deleted needs a Redeploy; its lab file is kept. Deleting a lab's last container also removes its networks.
 - **Images**: *Pull an image* at the top fetches one from Docker Hub (`alpine:3.20`, `nicolaka/netshoot`) or from another registry by its address (`ghcr.io/owner/image:tag`); it needs the Docker host's internet access. Below it, the images, with their size, which containers use them, and which saved labs need them. An image used by any container, even a stopped one, can't be deleted until the container is. *Clean up* removes unnamed images left behind by rebuilds and pulls.
 - **Networks**: every Docker network on the host, with its driver, subnet, and the containers attached to it, running or stopped (Docker's own list shows only running ones). Networks of DockerLab labs are tagged with their lab; those no container uses any more are *left over* (for example from labs removed outside DockerLab), and *Clean up* deletes them all at once. *Delete every unused network…* also removes unused networks DockerLab didn't create, such as GNS3's or stopped Compose projects', after asking. Deleting a network that containers use disconnects them first, after asking; a stopped one then won't start on it again, so a lab needs a Redeploy. *New network…* creates one: a **bridge** (a virtual switch on the host; optionally internal, with your subnet, gateway, address range, bridge name, MTU and IPv6), or a **macvlan** or **ipvlan** network that puts containers directly on one of the host's real networks (give its parent interface, such as `eth0`, and that network's subnet and router). For macvlan in VirtualBox, set that adapter's *Promiscuous Mode* to *Allow All*.
-- **Details:** click a container, image or network name (or *Details* next to it; for a deployed node, *Details* in its right pane; for an image on the shelf, double-click it) for what `docker inspect` shows, laid out in sections: state, command, networks and published ports, storage, environment, security and resource settings, and labels for a container; overview, how its containers start (entrypoint, command, environment, exposed ports), its Dockerfile if it was built in DockerLab, its build steps with the size each adds, and which containers and saved labs use it, for an image; overview, addresses, attached containers, options and labels for a network. Names link to each other, *Back* returns, and the raw JSON is at the bottom. For lab containers, the addresses actually set inside the container are shown next to Docker's carrier ones.
+- **Volumes**: every Docker volume on the host, with its size, where its files are, the containers that mount it (running or stopped), and the saved labs that use it. *Details* shows that, plus a **file browser**: click through the volume's folders and see each file's size and date. It reads them through a small helper container that mounts the volume read-only, so it needs no sudo. *New volume…* creates one, either in Docker's storage (the usual kind, deleted with the volume) or bound to an existing folder of the host (the files stay there when the volume is deleted). Docker won't delete a volume any container has, even a stopped one, so *Delete* is offered only for unused ones, and names what's still using the others. *Delete unused anonymous volumes* clears out the nameless ones Docker creates for images that declare a `VOLUME`; *Delete every unused volume…* removes the named ones too, after asking.
+- **Details:** click a container, image, network or volume name (or *Details* next to it; for a deployed node, *Details* in its right pane; for an image on the shelf, double-click it) for what `docker inspect` shows, laid out in sections: state, command, networks and published ports, storage, environment, security and resource settings, and labels for a container; overview, how its containers start (entrypoint, command, environment, exposed ports), its Dockerfile if it was built in DockerLab, its build steps with the size each adds, and which containers and saved labs use it, for an image; overview, addresses, attached containers, options and labels for a network. Names link to each other, *Back* returns, and the raw JSON is at the bottom. For lab containers, the addresses actually set inside the container are shown next to Docker's carrier ones.
 
 **Recovering a lost lab file.** A lab whose containers are still in the VM but whose lab file is gone is marked *no lab file*; *Recover lab file* rebuilds the file from the containers. Containers deployed by this version carry a compressed copy of their whole lab, so recovery is exact. For containers deployed by earlier versions it's best-effort: containers, images, switches, cables, subnets, fixed addresses, interface order, and the Router, Internet, port, volume and environment settings come back, but bench positions, startup commands, the description and interface limits don't (Redeploy once after recovering, and they'll be kept from then on).
 
@@ -237,7 +238,7 @@ To reach it from other machines than your PC, which can't see the Host-only netw
 
 DockerLab comes with ready-made labs, listed under *Examples* in *Open…*. Opening one gives you your own copy, saved in your labs folder under the example's name, so you can change it freely; opening it again later asks whether to open your copy or start over from the original. Each carries the Dockerfiles of its images, so the first Deploy builds any it needs on the Docker host; that needs the VM's internet access and takes a minute or two.
 
-They're numbered in teaching order, from one container to routing protocols. Each description has the addressing, step-by-step tasks with the commands, and questions; the routing labs leave the configuration to the student, with instructions to do it and to verify it.
+They're numbered in teaching order, from one container to routing protocols and a data-centre fabric. Each description has the addressing, step-by-step tasks with the commands, and questions; the routing labs come up unconfigured and leave the configuration to the student, with the full configuration in the description (to type, or paste into `vtysh`) and the steps to verify it.
 
 | Lab | What it shows |
 |---|---|
@@ -251,12 +252,17 @@ They're numbered in teaching order, from one container to routing protocols. Eac
 | `08-two-lans` | Two LANs joined by a router that also NATs both to the internet. |
 | `09-two-lans-desktop` | The same with a Linux desktop in the browser ([webtop](https://docs.linuxserver.io/images/docker-webtop), XFCE with Firefox) on LAN 1, reached at `https://<Docker host>:3001` (formerly *example-two-lans*). The desktop image is about 1.5 GB; give the VM at least 4 GB of RAM and, for a smooth desktop, 4 vCPUs. |
 | `10-static-routing` | Three FRR routers in a ring, each with a LAN; students configure static routes, then a backup route. |
+| `10a-static-addressing` | Lab 10 with nothing configured: students first give every router interface its address in `vtysh` and every PC its address and gateway, then add the static routes. |
 | `11-ospf` | The same ring; students configure OSPF, verify the adjacencies and routes, and break a link to watch it reroute. |
+| `11a-ospf-addressing` | Lab 11, addresses included in the exercise (as 10a). |
 | `12-ospf-srlinux` | The same ring with Nokia SR Linux routers, configured in SR Linux's CLI. The image is about 2.5 GB, and each router needs over 1 GB of memory: give the VM 8 GB. |
 | `13-dhcp` | A gateway that hands out addresses by DHCP (dnsmasq); students watch the DORA exchange and reserve an address. |
 | `14-dns` | A DNS server for the zone `lab.test` with A and CNAME records, forwarding other names. |
 | `15-load-balancer` | nginx sharing requests between two web servers, published on port 8080. |
 | `16-firewall` | A firewall between a LAN, a DMZ with a web server, and the internet; students write the iptables policy. |
+| `17-bgp` | The ring of labs 10 and 11 with each router in its own AS: eBGP, AS paths, and traffic engineering with AS-path prepending. |
+| `17a-bgp-addressing` | Lab 17, addresses included in the exercise (as 10a). |
+| `18-evpn-leaf-spine` | A data-centre fabric: 2 spines, 3 leaves, 6 PCs in VLANs 10 and 20 stretched across the leaves with VXLAN and BGP EVPN (FRR). Same-VLAN PCs reach each other, other-VLAN PCs don't. The leaves' data plane (bridges, VXLAN) is built by their startup commands; students configure BGP. |
 
 The images the labs build: *dockerlab/host* (end host tools), *dockerlab/router* (iptables and `nat-on`), *dockerlab/web* (BusyBox httpd), *dockerlab/gateway* (router plus dnsmasq), *dockerlab/frr* (FRRouting, privileged because FRR's daemons need it), *dockerlab/nginx*, *dockerlab/desktop*; lab 12 pulls `ghcr.io/nokia/srlinux`.
 
@@ -268,7 +274,11 @@ The images the labs build: *dockerlab/host* (end host tools), *dockerlab/router*
 
 *Export compose* downloads `<lab>.compose.yaml`, which recreates the lab with `docker compose -f <lab>.compose.yaml up -d` on any Docker host, for example to hand a finished lab to students. Images that DockerLab built, such as `dockerlab/host` or the example labs' images, exist only on the VM that built them, so the file carries their Dockerfiles (`build:` with `dockerfile_inline`) and Compose builds them on the new host; that needs Docker Compose 2.17 or newer, and internet access while building. `pull_policy: build` keeps Compose from pulling an unrelated image of the same name from Docker Hub instead. Images from a registry (`alpine:3.20`, `nginx:alpine`) are pulled as usual.
 
-Two differences from DockerLab: internet access uses a network called `nat` instead of Docker's default bridge, and startup commands are listed under `x-dockerlab-startup` (Compose ignores that section, so run them yourself after `up`).
+Startup commands run as **`post_start` hooks** (Docker Compose 2.30 or newer): Compose runs them in each container every time it starts it (`up`, `start`, `restart`), as DockerLab does, so routes, NAT and servers come up on their own. A plain `docker start` doesn't run them. Every `$` in commands, environment values and Dockerfiles is written as `$$`, so Compose leaves the shell's variables alone.
+
+A lab with cables or switches also gets a one-off service, **`dockerlab-hostfw`**, which the lab's containers wait for. If the host has bridge netfilter on, it adds the same two iptables rules DockerLab adds on its own hosts (see *Lab traffic and the Docker host's firewall*); without them, traffic routed between the lab's networks, or out through its gateway, would be dropped. It runs with the host's network and `NET_ADMIN`, prints what it did (`docker compose logs dockerlab-hostfw`), and exits.
+
+One difference from DockerLab: internet access uses a network called `nat` instead of Docker's default bridge.
 
 ## How a lab maps to Docker
 
@@ -289,7 +299,7 @@ The bench shows each container's interfaces once deployed, e.g. `eth0  to pc1  1
 
 **Lab traffic and the Docker host's firewall.** Lab networks are Docker *internal* networks, and Docker's firewall drops packets on them whose source or destination is outside the subnet Docker knows for the network, which is the carrier subnet (see below), so that's every lab packet. That never matters unless the Docker host has *bridge netfilter* on (`net.bridge.bridge-nf-call-iptables = 1`); then nothing in a lab could talk. On every Deploy, DockerLab checks for this and, if needed, adds two rules on the Docker host: one accepts traffic within its own bridges (named `dl…`), `iptables -I DOCKER-USER -i dl+ -o dl+ -j ACCEPT`, and one keeps that traffic out of Docker's NAT, `iptables -t nat -I POSTROUTING -o dl+ -j RETURN` (otherwise a connection from the Docker host itself to a published port, such as `curl localhost:8080` in its console, gets masqueraded inside the lab and its reply is lost). It uses the same SSH login as capture, and the sudo rule DockerLab offers when it first connects; if that's not possible, Deploy says so and shows the command to run yourself.
 
-**Lab addresses.** Each lab has its own address space: two labs can use the same subnets at the same time, and every address, `.1` included, is yours. Docker requires every network on the engine to have its own subnet, so DockerLab doesn't give it the lab's: each cable and switch gets a private *carrier* subnet from `100.64.0.0/10` that only Docker sees. After every container start (Deploy, Start, Restart), DockerLab replaces the carrier addresses inside the container with the lab's, using the image's `ip` command, or, for images without one, a small helper container (`alpine`) that shares the container's network. Cables and switches without a subnet get one of their own from `172.31.0.0/16`, and ends without a fixed address get the lowest free address of their subnet; both stay the same across redeploys. Docker gives a restarted container new MAC addresses, so DockerLab then announces each address with a gratuitous ARP (if the image has `arping`, as BusyBox does), and neighbours update at once instead of after their ARP cache times out. Containers with *DockerLab sets the addresses* off only get the carrier addresses removed.
+**Lab addresses.** Each lab has its own address space: two labs can use the same subnets at the same time, and every address, `.1` included, is yours. Docker requires every network on the engine to have its own subnet, so DockerLab doesn't give it the lab's: each cable and switch gets a private *carrier* subnet from `100.64.0.0/10` that only Docker sees. After every container start (Deploy, Start, Restart), DockerLab replaces the carrier addresses inside the container with the lab's, using the image's `ip` command, or, for images without one, a small helper container (`alpine`) that shares the container's network. Cables and switches without a subnet get one of their own from `172.31.0.0/16`, and ends without a fixed address get the lowest free address of their subnet; both stay the same across redeploys. Docker gives a restarted container new MAC addresses, so DockerLab then announces each address with a gratuitous ARP (if the image has `arping`, as BusyBox does), and neighbours update at once instead of after their ARP cache times out. Containers with *DockerLab sets the addresses* off only get the carrier addresses removed; for 30 seconds after each start, DockerLab announces whatever addresses appear on them (set by a routing daemon from its saved configuration, a DHCP client or a network OS) the same way.
 
 **Names.** DockerLab also adds every node's name to each container's `/etc/hosts`, so `ping serv-www` works in any lab container, without DNS.
 
@@ -300,7 +310,7 @@ The bench shows each container's interfaces once deployed, e.g. `eth0  to pc1  1
 ```
 backend/
   main.py          FastAPI app: REST API + serves the built UI
-  deployer.py      topology → Docker networks/containers, start/stop, startup commands, status
+  deployer.py      topology -> Docker networks/containers, start/stop, startup commands, status
   capture.py       launches ssh | tcpdump | Wireshark
   compose.py       docker-compose export
   templates.py     Dockerfile templates for Build image
@@ -311,6 +321,7 @@ backend/
   hostload.py      CPU and memory of the Docker host, and per container
   vmadmin.py       container and image inventory, deletes, lab recovery
   netadmin.py      Docker networks: list, inspect, create, delete, clean up
+  voladmin.py      Docker volumes: list, inspect, browse files, create, delete, clean up
   models.py        topology data model (validated with pydantic)
   static/          built UI (generated by `npm run build`)
 frontend/          React + React Flow source; console.html + src/console.js is the terminal window
@@ -338,16 +349,23 @@ To work on the UI: `cd frontend`, `npm install`, `npm run dev` (with the backend
 | POST | `/api/labs/{name}/nodes/{id}/{start,stop,restart}` | control one container |
 | WS | `/api/vm/console` | terminal on the Docker host (the VM), same framing as container consoles |
 | WS | `/api/labs/{name}/nodes/{id}/console` | terminal: binary frames are terminal bytes, text frames are JSON (`{"resize": [cols, rows]}`) |
+| WS | `/api/vm/containers/{id}/console` | terminal in any running container on the Docker host, same framing |
 | POST | `/api/labs/{name}/links/{id}/capture` | open a live capture of a cable in Wireshark |
 | GET | `/api/labs/{name}/compose` | the lab as a docker-compose file |
 | GET | `/api/labs/{name}/file` | the lab file, for sharing |
 | POST | `/api/labs/import` | add a lab from a lab file (body); 409 with a suggested name if it exists; `?overwrite=true` or `?rename=` |
 | GET | `/api/vm/containers` | every container in the VM, grouped by lab, with whether the lab file exists |
 | DELETE | `/api/vm/containers/{id}` | delete a container (and its lab's networks once the lab has no containers left) |
+| POST | `/api/vm/containers/{id}/{start,stop,restart}` | control any container; DockerLab's are started with their lab addresses and startup commands |
 | GET | `/api/vm/images` | every image, with the containers and labs using it, and unnamed leftovers |
 | DELETE | `/api/vm/images/{tag}` | delete an image; 409 if a container uses it |
 | POST | `/api/vm/images/prune` | remove unnamed leftover images |
 | POST | `/api/vm/labs/{lab}/recover` | rebuild a lab file from its deployed containers |
+| GET | `/api/vm/volumes`, `/api/vm/volumes/{name}` | volumes with their users and labs; one volume |
+| GET | `/api/vm/volumes/{name}/files?path=` | the entries of one folder in a volume |
+| GET | `/api/vm/volumes-sizes` | bytes used by each volume |
+| POST, DELETE | `/api/vm/volumes`, `/api/vm/volumes/{name}` | create (`{"name", "device"?}`) or delete a volume |
+| POST | `/api/vm/volumes-prune?scope=anonymous\|all` | delete unused volumes |
 | GET | `/api/running` | every running container on the engine, grouped by lab, plus those outside DockerLab |
 
 Interactive docs at http://127.0.0.1:8000/docs.

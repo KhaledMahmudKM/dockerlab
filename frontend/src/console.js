@@ -10,6 +10,7 @@ const q = new URLSearchParams(location.search);
 const lab = q.get("lab");
 const node = q.get("node");
 const vm = q.get("vm") === "1";            // a shell on the Docker host itself
+const container = q.get("container");      // any container, by id (from Manage)
 const name = q.get("name") || node;
 document.title = `${name} console`;
 document.getElementById("name").textContent = name;
@@ -47,6 +48,7 @@ function sendSize() {
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const path = vm ? "/api/vm/console"
+    : container ? `/api/vm/containers/${encodeURIComponent(container)}/console`
     : `/api/labs/${encodeURIComponent(lab)}/nodes/${encodeURIComponent(node)}/console`;
   ws = new WebSocket(`${proto}://${location.host}${path}`);
   ws.binaryType = "arraybuffer";

@@ -352,7 +352,26 @@ fix() {
     # A restarted container has new MAC addresses: tell the neighbours (gratuitous ARP),
     # or they keep sending to the old one until their ARP cache times out
     [ -n "$2" ] && [ -n "$ARPING" ] && ($ARPING -q -U -c 2 -I "$IF" "${2%/*}" >/dev/null 2>&1 &)
+    LEFT="$LEFT $IF"
   done
+}
+# For interfaces whose addresses something else sets (a routing daemon from its saved
+# configuration, a DHCP client, a network OS): announce them once they appear, for 30 s
+announce_later() {
+  [ -n "$ARPING" ] && [ -n "$LEFT" ] || return 0
+  (
+    DONE=""
+    for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      sleep 2
+      for IF in $LEFT; do
+        for a in $(ip -4 -o addr show dev "$IF" 2>/dev/null | awk '{print $4}'); do
+          case " $DONE " in *" $IF/$a "*) continue ;; esac
+          $ARPING -q -U -c 2 -I "$IF" "${a%/*}" >/dev/null 2>&1
+          DONE="$DONE $IF/$a"
+        done
+      done
+    done
+  ) >/dev/null 2>&1 </dev/null &
 }
 """
 
@@ -403,7 +422,7 @@ def apply_addresses(client, topo: Topology, node_ids=None) -> list[str]:
                 calls.append(f"fix {shlex.quote(nets[i['net']].get('MacAddress', ''))} {shlex.quote(addr)}")
         if not calls:
             return None
-        script = IP_SCRIPT + "\n".join(calls) + "\n"
+        script = IP_SCRIPT + "\n".join(calls) + "\n" + ("" if node.set_addresses else "announce_later\n")
         res = c.exec_run(["sh", "-c", (hosts if node.set_addresses else "") + script])
         if res.exit_code == 127:            # no `ip` in this image: set them from a helper container
             try:

@@ -1,0 +1,238 @@
+{
+  "name": "17-bgp",
+  "description": "Three routers in a ring, each in an **autonomous system** of its own: r1 is AS 65001, r2 AS 65002 and r3 AS 65003. Each has a LAN. DockerLab gives every interface its address; the routers learn each other's LANs with **eBGP**, in FRRouting (FRR).\n\n| Router | LAN | to the next router | to the previous router |\n|---|---|---|---|\n| r1 | `eth0` `192.168.1.1/24` | `eth1` `10.0.12.1/24` → r2 | `eth2` `10.0.13.1/24` → r3 |\n| r2 | `eth0` `192.168.2.1/24` | `eth2` `10.0.23.2/24` → r3 | `eth1` `10.0.12.2/24` → r1 |\n| r3 | `eth0` `192.168.3.1/24` | `eth2` `10.0.13.3/24` → r1 | `eth1` `10.0.23.3/24` → r2 |\n\npc1, pc2 and pc3 are `192.168.1.10`, `192.168.2.10` and `192.168.3.10`, on switches sw1, sw2 and sw3. Each PC's default gateway is its router's `.1`.\n\n## Before you start\n**Deploy**. The routers come up with no routing configured: from pc1, `ping -c 2 192.168.2.10` fails. Open each router's **Console** and start FRR's shell with `vtysh`.\n\n## Configure eBGP\nEach router peers with its two neighbours (on the ring links) and announces its own LAN. You can type the commands, or paste each block into the router's `vtysh` at once.\n\n**r1** (AS 65001)\n```\nconfigure terminal\nrouter bgp 65001\n bgp router-id 1.1.1.1\n no bgp ebgp-requires-policy\n neighbor 10.0.12.2 remote-as 65002\n neighbor 10.0.13.3 remote-as 65003\n address-family ipv4 unicast\n  network 192.168.1.0/24\n exit-address-family\nend\nwrite memory\n```\n**r2** (AS 65002)\n```\nconfigure terminal\nrouter bgp 65002\n bgp router-id 2.2.2.2\n no bgp ebgp-requires-policy\n neighbor 10.0.12.1 remote-as 65001\n neighbor 10.0.23.3 remote-as 65003\n address-family ipv4 unicast\n  network 192.168.2.0/24\n exit-address-family\nend\nwrite memory\n```\n**r3** (AS 65003)\n```\nconfigure terminal\nrouter bgp 65003\n bgp router-id 3.3.3.3\n no bgp ebgp-requires-policy\n neighbor 10.0.23.2 remote-as 65002\n neighbor 10.0.13.1 remote-as 65001\n address-family ipv4 unicast\n  network 192.168.3.0/24\n exit-address-family\nend\nwrite memory\n```\n\n> [!NOTE]\n> `no bgp ebgp-requires-policy`: by default, FRR (following RFC 8212) accepts and announces nothing on an eBGP session until a route policy allows it. Real networks set filters; this lab switches the rule off to keep the first steps short. Leave it out on r1 and watch `show bgp summary`: the session comes up, but the prefix counts say `(Policy)`.\n\n## Verify\n1. In vtysh on each router:\n   ```\n   show bgp summary\n   show bgp ipv4 unicast\n   show ip route bgp\n   ```\n   Two neighbours in state *Established* (a number of prefixes in the last column, not a state), and routes to the two other LANs, each with its **AS path**.\n2. From pc1:\n   ```\n   ping -c 3 192.168.2.10\n   traceroute -n 192.168.3.10\n   ```\n3. Capture the **r1–r2** cable: TCP port 179, with *OPEN*, *UPDATE* and *KEEPALIVE* messages.\n\n## Go further\n- [ ] On r1, look at `show bgp ipv4 unicast 192.168.3.0/24`: two paths. Which one is *best*, and why?\n- [ ] **Traffic engineering with AS-path prepending.** Make r3 reach LAN 1 through r2, by making the direct path look longer:\n  ```\n  configure terminal\n  route-map PREPEND permit 10\n   set as-path prepend 65001 65001\n  exit\n  router bgp 65001\n   address-family ipv4 unicast\n    neighbor 10.0.13.3 route-map PREPEND out\n  end\n  clear bgp 10.0.13.3 soft out\n  ```\n  On r3, `show bgp ipv4 unicast 192.168.1.0/24`: which path is best now? Does traffic from pc3 to pc1 take r2 (`traceroute -n 192.168.1.10` on pc3)? And the replies?\n- [ ] Take the r1–r3 link down from r1's console (not vtysh): `ip link set eth2 down`. How quickly does r1 move to the path through r2? Then `ip link set eth2 up`.\n\n## Questions\n- [ ] OSPF (lab 11) chose paths by cost. What does BGP compare first here?\n- [ ] Why does r1 not accept a route whose AS path already contains 65001?\n- [ ] Each router announces only its LAN. Why can pc1 still ping r2's address `10.0.23.2`, or can it?\n",
+  "nodes": [
+    {
+      "id": "r1",
+      "name": "r1",
+      "image": "dockerlab/frr:latest",
+      "x": 60,
+      "y": 330,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": true,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "r2",
+      "name": "r2",
+      "image": "dockerlab/frr:latest",
+      "x": 520,
+      "y": 330,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": true,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "r3",
+      "name": "r3",
+      "image": "dockerlab/frr:latest",
+      "x": 290,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": true,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/host:latest",
+      "x": 0,
+      "y": 760,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r1 is the way out of this LAN\nip route replace default via 192.168.1.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 600,
+      "y": 760,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r2 is the way out of this LAN\nip route replace default via 192.168.2.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    },
+    {
+      "id": "pc3",
+      "name": "pc3",
+      "image": "dockerlab/host:latest",
+      "x": 620,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "# r3 is the way out of this LAN\nip route replace default via 192.168.3.1\necho nameserver 1.1.1.1 > /etc/resolv.conf\n",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": true,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "sw1",
+      "name": "sw1",
+      "x": 70,
+      "y": 590,
+      "subnet": "192.168.1.0/24"
+    },
+    {
+      "id": "sw2",
+      "name": "sw2",
+      "x": 530,
+      "y": 590,
+      "subnet": "192.168.2.0/24"
+    },
+    {
+      "id": "sw3",
+      "name": "sw3",
+      "x": 620,
+      "y": 230,
+      "subnet": "192.168.3.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-r1-sw1",
+      "source": "r1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r2-sw2",
+      "source": "r2",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r3-sw3",
+      "source": "r3",
+      "target": "sw3",
+      "subnet": "",
+      "source_ip": "192.168.3.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r1-r2",
+      "source": "r1",
+      "target": "r2",
+      "subnet": "10.0.12.0/24",
+      "source_ip": "10.0.12.1",
+      "target_ip": "10.0.12.2"
+    },
+    {
+      "id": "c-r2-r3",
+      "source": "r2",
+      "target": "r3",
+      "subnet": "10.0.23.0/24",
+      "source_ip": "10.0.23.2",
+      "target_ip": "10.0.23.3"
+    },
+    {
+      "id": "c-r3-r1",
+      "source": "r3",
+      "target": "r1",
+      "subnet": "10.0.13.0/24",
+      "source_ip": "10.0.13.3",
+      "target_ip": "10.0.13.1"
+    },
+    {
+      "id": "c-pc1-sw1",
+      "source": "pc1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2-sw2",
+      "source": "pc2",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc3-sw3",
+      "source": "pc3",
+      "target": "sw3",
+      "subnet": "",
+      "source_ip": "192.168.3.10",
+      "target_ip": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "n1",
+      "x": -190,
+      "y": 20,
+      "w": 450,
+      "h": 80,
+      "text": "r1  eth0 192.168.1.1  ·  eth1 10.0.12.1  ·  eth2 10.0.13.1\nr2  eth0 192.168.2.1  ·  eth1 10.0.12.2  ·  eth2 10.0.23.2\nr3  eth0 192.168.3.1  ·  eth1 10.0.23.3  ·  eth2 10.0.13.3",
+      "color": "yellow"
+    }
+  ],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n",
+    "dockerlab/frr:latest": "FROM alpine:latest\n\n# FRRouting (vtysh, zebra, staticd, ospfd, ripd, bgpd), plus the network tools\nRUN apk add --no-cache frr iproute2 tcpdump bind-tools curl iputils\n\n# Turn on the routing protocol daemons the labs use (zebra and staticd always run)\nRUN sed -i -e 's/^ospfd=no/ospfd=yes/' -e 's/^ripd=no/ripd=yes/' -e 's/^bgpd=no/bgpd=yes/' /etc/frr/daemons\n\n# Start FRR with the container; its configuration is /etc/frr/frr.conf (vtysh: write memory)\nCMD [\"sh\", \"-c\", \"/usr/lib/frr/frrinit.sh start; exec sleep infinity\"]\n"
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "name": "11a-ospf-addressing",
+  "description": "> [!NOTE]\n> The addressing variant of lab 11: the same network, with the addresses left to you.\n\nThree routers in a ring, each with a LAN. Nothing is configured: **you give every interface its address**, then make the routers learn the routes with OSPF, in FRRouting (FRR).\n\n| Router | LAN | to the next router | to the previous router |\n|---|---|---|---|\n| r1 | `eth0` `192.168.1.1/24` | `eth1` `10.0.12.1/24` → r2 | `eth2` `10.0.13.1/24` → r3 |\n| r2 | `eth0` `192.168.2.1/24` | `eth2` `10.0.23.2/24` → r3 | `eth1` `10.0.12.2/24` → r1 |\n| r3 | `eth0` `192.168.3.1/24` | `eth2` `10.0.13.3/24` → r1 | `eth1` `10.0.23.3/24` → r2 |\n\npc1, pc2 and pc3 are `192.168.1.10`, `192.168.2.10` and `192.168.3.10`, on switches sw1, sw2 and sw3. Each PC's default gateway is its router's `.1`.\n\n## Part 1: Addressing\n**Deploy**. Nothing is configured: every interface is empty (`ip -br addr` in a console shows no IPv4 addresses). The addresses to use are in the table above, and on the cables.\n\n### Routers\nOpen each router's **Console**, start `vtysh`, and give each interface its address. Type the commands, or paste the router's block.\n\n**r1**\n```\nconfigure terminal\ninterface eth0\n ip address 192.168.1.1/24\ninterface eth1\n ip address 10.0.12.1/24\ninterface eth2\n ip address 10.0.13.1/24\nend\nwrite memory\n```\n**r2**\n```\nconfigure terminal\ninterface eth0\n ip address 192.168.2.1/24\ninterface eth1\n ip address 10.0.12.2/24\ninterface eth2\n ip address 10.0.23.2/24\nend\nwrite memory\n```\n**r3**\n```\nconfigure terminal\ninterface eth0\n ip address 192.168.3.1/24\ninterface eth1\n ip address 10.0.23.3/24\ninterface eth2\n ip address 10.0.13.3/24\nend\nwrite memory\n```\n\nCheck, in vtysh: `show interface brief` lists the three interfaces *up* with their addresses, and `show ip route` now has three connected networks (`C>*`). Once the neighbour is done too, the link works: from r1, `ping -c 2 10.0.12.2` (in vtysh or the shell).\n\n> [!TIP]\n> `write memory` saves the configuration in the router (`/etc/frr/frr.conf`), and FRR puts the addresses back every time it starts. A Redeploy starts from scratch.\n\n### PCs\nThe PCs are plain Linux, without vtysh. In each PC's **Console**, give it its address and its default gateway, its router's LAN address:\n\n**pc1**\n```\nip addr add 192.168.1.10/24 dev eth0\nip route add default via 192.168.1.1\n```\n**pc2**\n```\nip addr add 192.168.2.10/24 dev eth0\nip route add default via 192.168.2.1\n```\n**pc3**\n```\nip addr add 192.168.3.10/24 dev eth0\nip route add default via 192.168.3.1\n```\n\nCheck: from pc1, `ping -c 2 192.168.1.1` (its gateway) works, and `ping -c 2 192.168.2.10` doesn't, yet: the routers know only their own networks. That's Part 2.\n\n> [!NOTE]\n> Addresses set with `ip` last until the container stops. To keep them, put the two commands in the PC's **startup commands** (click the PC): DockerLab runs them at every start.\n\n## Part 2: Routing\n### Configure OSPF\nOpen each router's **Console**, start `vtysh`, and enable OSPF on all its interfaces, in area 0. On **r1**:\n```\nconfigure terminal\nrouter ospf\n ospf router-id 1.1.1.1\n network 192.168.1.0/24 area 0\n network 10.0.12.0/24 area 0\n network 10.0.13.0/24 area 0\n passive-interface eth0\nexit\ninterface eth1\n ip ospf network point-to-point\ninterface eth2\n ip ospf network point-to-point\nend\nwrite memory\n```\nThen **r2** (router-id `2.2.2.2`, networks `192.168.2.0/24`, `10.0.12.0/24`, `10.0.23.0/24`) and **r3** (router-id `3.3.3.3`, networks `192.168.3.0/24`, `10.0.23.0/24`, `10.0.13.0/24`). Their LAN is `eth0` too.\n\n> [!NOTE]\n> `passive-interface eth0` advertises the LAN without sending OSPF hellos to the PCs. `point-to-point` suits a link with only two routers: no DR election, faster adjacency.\n\n## Verify\n1. In vtysh on each router:\n   ```\n   show ip ospf neighbor\n   show ip ospf interface brief\n   show ip route ospf\n   ```\n   Each router should have two neighbours in state *Full*, and `O>*` routes to the two other LANs.\n2. From pc1:\n   ```\n   ping -c 3 192.168.2.10\n   traceroute -n 192.168.3.10\n   ```\n3. Capture the **r1–r2** cable: OSPF *Hello* packets every 10 seconds, to `224.0.0.5`.\n\n## Break it\n1. Leave a ping running from pc1 to pc3 (`ping 192.168.3.10`).\n2. In r1's console (not vtysh), take the direct link down: `ip link set eth2 down`.\n3. Watch the ping: how many replies are lost before OSPF reroutes through r2? Check `traceroute -n 192.168.3.10` and `show ip route ospf` on r1.\n4. Bring it back: `ip link set eth2 up`.\n\n## Questions\n- [ ] Why is the route through r2 not used while the direct link is up? Look at the *cost* in `show ip route ospf`.\n- [ ] Set `ip ospf cost 100` on r1's eth2. Which path does pc1 → pc3 take now, and the way back?\n- [ ] Compare with lab 10: what would you have had to change by hand when the link went down?\n",
+  "nodes": [
+    {
+      "id": "r1",
+      "name": "r1",
+      "image": "dockerlab/frr:latest",
+      "x": 60,
+      "y": 330,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": true,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    },
+    {
+      "id": "r2",
+      "name": "r2",
+      "image": "dockerlab/frr:latest",
+      "x": 520,
+      "y": 330,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": true,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    },
+    {
+      "id": "r3",
+      "name": "r3",
+      "image": "dockerlab/frr:latest",
+      "x": 290,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": true,
+      "privileged": true,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    },
+    {
+      "id": "pc1",
+      "name": "pc1",
+      "image": "dockerlab/host:latest",
+      "x": 0,
+      "y": 760,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    },
+    {
+      "id": "pc2",
+      "name": "pc2",
+      "image": "dockerlab/host:latest",
+      "x": 600,
+      "y": 760,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    },
+    {
+      "id": "pc3",
+      "name": "pc3",
+      "image": "dockerlab/host:latest",
+      "x": 620,
+      "y": 40,
+      "command": "",
+      "ports": [],
+      "volumes": [],
+      "env": [],
+      "internet": false,
+      "router": false,
+      "privileged": false,
+      "startup": "",
+      "interfaces": 0,
+      "ifname_first": "",
+      "nat_ifname": "",
+      "set_addresses": false,
+      "sysctls": []
+    }
+  ],
+  "switches": [
+    {
+      "id": "sw1",
+      "name": "sw1",
+      "x": 70,
+      "y": 590,
+      "subnet": "192.168.1.0/24"
+    },
+    {
+      "id": "sw2",
+      "name": "sw2",
+      "x": 530,
+      "y": 590,
+      "subnet": "192.168.2.0/24"
+    },
+    {
+      "id": "sw3",
+      "name": "sw3",
+      "x": 620,
+      "y": 230,
+      "subnet": "192.168.3.0/24"
+    }
+  ],
+  "links": [
+    {
+      "id": "c-r1-sw1",
+      "source": "r1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r2-sw2",
+      "source": "r2",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r3-sw3",
+      "source": "r3",
+      "target": "sw3",
+      "subnet": "",
+      "source_ip": "192.168.3.1",
+      "target_ip": ""
+    },
+    {
+      "id": "c-r1-r2",
+      "source": "r1",
+      "target": "r2",
+      "subnet": "10.0.12.0/24",
+      "source_ip": "10.0.12.1",
+      "target_ip": "10.0.12.2"
+    },
+    {
+      "id": "c-r2-r3",
+      "source": "r2",
+      "target": "r3",
+      "subnet": "10.0.23.0/24",
+      "source_ip": "10.0.23.2",
+      "target_ip": "10.0.23.3"
+    },
+    {
+      "id": "c-r3-r1",
+      "source": "r3",
+      "target": "r1",
+      "subnet": "10.0.13.0/24",
+      "source_ip": "10.0.13.3",
+      "target_ip": "10.0.13.1"
+    },
+    {
+      "id": "c-pc1-sw1",
+      "source": "pc1",
+      "target": "sw1",
+      "subnet": "",
+      "source_ip": "192.168.1.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc2-sw2",
+      "source": "pc2",
+      "target": "sw2",
+      "subnet": "",
+      "source_ip": "192.168.2.10",
+      "target_ip": ""
+    },
+    {
+      "id": "c-pc3-sw3",
+      "source": "pc3",
+      "target": "sw3",
+      "subnet": "",
+      "source_ip": "192.168.3.10",
+      "target_ip": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "n1",
+      "x": -190,
+      "y": 20,
+      "w": 450,
+      "h": 80,
+      "text": "r1  eth0 192.168.1.1  ·  eth1 10.0.12.1  ·  eth2 10.0.13.1\nr2  eth0 192.168.2.1  ·  eth1 10.0.12.2  ·  eth2 10.0.23.2\nr3  eth0 192.168.3.1  ·  eth1 10.0.23.3  ·  eth2 10.0.13.3",
+      "color": "yellow"
+    }
+  ],
+  "images": {
+    "dockerlab/host:latest": "FROM alpine:latest\n\n# Everyday tools for an end host: full ip, packet capture, DNS lookups, web requests\nRUN apk add --no-cache iproute2 tcpdump bind-tools curl iputils\n",
+    "dockerlab/frr:latest": "FROM alpine:latest\n\n# FRRouting (vtysh, zebra, staticd, ospfd, ripd, bgpd), plus the network tools\nRUN apk add --no-cache frr iproute2 tcpdump bind-tools curl iputils\n\n# Turn on the routing protocol daemons the labs use (zebra and staticd always run)\nRUN sed -i -e 's/^ospfd=no/ospfd=yes/' -e 's/^ripd=no/ripd=yes/' -e 's/^bgpd=no/bgpd=yes/' /etc/frr/daemons\n\n# Start FRR with the container; its configuration is /etc/frr/frr.conf (vtysh: write memory)\nCMD [\"sh\", \"-c\", \"/usr/lib/frr/frrinit.sh start; exec sleep infinity\"]\n"
+  }
+}

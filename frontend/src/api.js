@@ -39,11 +39,19 @@ export const api = {
   vmRemoveContainer: (id) => call("DELETE", `/vm/containers/${id}`),
   vmImages: () => call("GET", "/vm/images"),
   vmLoad: () => call("GET", "/vm/load"),
+  vmContainerAction: (id, action) => call("POST", `/vm/containers/${id}/${action}`),
   vmLoadContainers: () => call("GET", "/vm/load/containers"),
   vmRemoveImage: (tag) => call("DELETE", `/vm/images/${tag.split("/").map(encodeURIComponent).join("/")}`),
   vmPrune: () => call("POST", "/vm/images/prune"),
   vmImage: (ref) => call("GET", `/vm/image?ref=${encodeURIComponent(ref)}`),
   vmInspectContainer: (id) => call("GET", `/vm/containers/${encodeURIComponent(id)}/inspect`),
+  vmVolumes: () => call("GET", "/vm/volumes"),
+  vmVolumeSizes: () => call("GET", "/vm/volumes-sizes"),
+  vmVolume: (name) => call("GET", `/vm/volumes/${encodeURIComponent(name)}`),
+  vmVolumeFiles: (name, path = "") => call("GET", `/vm/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path)}`),
+  vmCreateVolume: (spec) => call("POST", "/vm/volumes", spec),
+  vmRemoveVolume: (name) => call("DELETE", `/vm/volumes/${encodeURIComponent(name)}`),
+  vmPruneVolumes: (scope = "anonymous") => call("POST", `/vm/volumes-prune?scope=${scope}`),
   vmNetworks: () => call("GET", "/vm/networks"),
   vmNetwork: (id) => call("GET", `/vm/networks/${encodeURIComponent(id)}`),
   vmCreateNetwork: (spec) => call("POST", "/vm/networks", spec),
@@ -74,6 +82,12 @@ export const api = {
 export function openConsole(lab, nodeId, name) {
   const q = new URLSearchParams({ lab, node: nodeId, name });
   window.open(`/console.html?${q}`, `console-${lab}-${nodeId}`, "width=860,height=540");
+}
+
+/** A shell in any running container on the Docker host, by id (Manage). */
+export function openContainerConsole(id, name) {
+  const q = new URLSearchParams({ container: id, name });
+  window.open(`/console.html?${q}`, `console-c-${id}`, "width=860,height=540");
 }
 
 export function openVmConsole(name) {

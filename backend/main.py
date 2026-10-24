@@ -32,6 +32,7 @@ import deployer
 import hostfw
 import hostload
 import netadmin
+import voladmin
 import paths
 import images as labimages
 import templates
@@ -531,6 +532,71 @@ def vm_prune_networks(scope: str = "dockerlab"):
     return netadmin.prune(client(), "all" if scope == "all" else "dockerlab")
 
 
+def _volume_refs() -> dict[str, list[str]]:
+    """volume name -> saved labs that mount it (named volumes only, not host folders)."""
+    refs: dict[str, list[str]] = {}
+    for lab, topo in _lab_files().items():
+        for n in topo.nodes:
+            for v in n.volumes:
+                if v.source and not v.source.startswith(("/", ".", "~")) and lab not in refs.get(v.source, []):
+                    refs.setdefault(v.source, []).append(lab)
+    return refs
+
+
+@app.get("/api/vm/volumes")
+def vm_volumes():
+    return voladmin.inventory(client(), _volume_refs())
+
+
+@app.get("/api/vm/volumes-sizes")
+def vm_volume_sizes():
+    return voladmin.sizes(client())
+
+
+@app.get("/api/vm/volumes/{name}")
+def vm_volume(name: str):
+    try:
+        return voladmin.inspect(client(), name, _volume_refs())
+    except NotFound:
+        raise HTTPException(404, "That volume no longer exists.")
+
+
+@app.get("/api/vm/volumes/{name}/files")
+def vm_volume_files(name: str, path: str = ""):
+    try:
+        return voladmin.files(client(), name, path)
+    except NotFound:
+        raise HTTPException(404, "That volume no longer exists.")
+    except voladmin.VolError as e:
+        raise HTTPException(400, str(e))
+    except (APIError, docker.errors.ContainerError) as e:
+        raise HTTPException(400, _short(e))
+
+
+@app.post("/api/vm/volumes")
+async def vm_create_volume(request: Request):
+    spec = await request.json()
+    try:
+        return await asyncio.to_thread(voladmin.create, client(), spec)
+    except voladmin.VolError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/vm/volumes/{name}")
+def vm_remove_volume(name: str):
+    try:
+        return voladmin.remove(client(), name)
+    except voladmin.VolError as e:
+        raise HTTPException(409, str(e))
+    except NotFound:
+        raise HTTPException(404, "That volume no longer exists.")
+
+
+@app.post("/api/vm/volumes-prune")
+def vm_prune_volumes(scope: str = "anonymous"):
+    return voladmin.prune(client(), "all" if scope == "all" else "anonymous")
+
+
 @app.get("/api/vm/load")
 def vm_load():
     """CPU and memory of the Docker host, for the Docker Host pane."""
@@ -789,14 +855,80 @@ async def node_action(name: str, node_id: str, action: str, request: Request):
         raise HTTPException(400, e.explanation or str(e))
 
 
+@app.post("/api/vm/containers/{cid}/{action}")
+def container_action(cid: str, action: str):
+    """Start, stop or restart any container (Manage). A DockerLab container whose lab file
+    exists is started the way its lab starts it, with the lab's addresses and startup
+    commands; a plain `docker start` would leave it with Docker's carrier addresses."""
+    if action not in ("start", "stop", "restart"):
+        raise HTTPException(400, "action must be start, stop or restart")
+    c = client()
+    try:
+        ct = c.containers.get(cid)
+    except NotFound:
+        raise HTTPException(404, "This container doesn't exist any more.")
+    lab, node_id = ct.labels.get(deployer.LABEL), ct.labels.get("dockerlab.node")
+    try:
+        if lab and node_id and _path(lab).exists():
+            topo = _load(lab)
+            if any(n.id == node_id for n in topo.nodes):
+                r = deployer.node_action(c, topo, node_id, action)
+                failed = [k for k, v in r.get("startup", {}).items() if v.get("exit")]
+                return {"status": r["status"], "lab": lab,
+                        "note": "Its startup commands failed; open the lab to see their output." if failed else ""}
+        if action == "stop":
+            ct.stop(timeout=deployer.STOP_TIMEOUT)
+        elif action == "restart":
+            ct.restart(timeout=deployer.STOP_TIMEOUT)
+        else:
+            ct.start()
+        ct.reload()
+        note = ""
+        if lab and action != "stop":
+            note = (f"Its lab file ({lab}) is missing, so it has Docker's internal addresses, not the lab's, "
+                    "and its startup commands didn't run. Recover the lab file, then start it from the lab.")
+        return {"status": ct.status, "lab": lab, "note": note}
+    except APIError as e:
+        raise HTTPException(400, _short(e))
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+
+
 # ---------------------------------------------------------------- console
 SHELL = ["sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"]
 
 
 @app.websocket("/api/labs/{name}/nodes/{node_id}/console")
 async def console(ws: WebSocket, name: str, node_id: str):
-    """Interactive shell: browser <-> WebSocket <-> `docker exec -it` socket.
+    """Interactive shell in a lab node: browser <-> WebSocket <-> `docker exec -it` socket.
     Binary frames carry terminal bytes; text frames carry JSON control messages."""
+    def find(c):
+        topo = _load(name)
+        node = next((n for n in topo.nodes if n.id == node_id), None)
+        if node is None:
+            raise RuntimeError("This node isn't in the saved lab. Save and deploy first.")
+        container = deployer.node_container(c, name, node.id)
+        if container is None:
+            raise RuntimeError(f"{node.name} isn't deployed. Deploy the lab first.")
+        return container, node.name
+    await _exec_console(ws, find)
+
+
+@app.websocket("/api/vm/containers/{cid}/console")
+async def container_console(ws: WebSocket, cid: str):
+    """Interactive shell in any container on the Docker host, DockerLab's or not (Manage)."""
+    def find(c):
+        try:
+            container = c.containers.get(cid)
+        except NotFound:
+            raise RuntimeError("This container doesn't exist any more.")
+        return container, container.name
+    await _exec_console(ws, find)
+
+
+async def _exec_console(ws: WebSocket, find):
+    """`docker exec -it` a shell (bash if the image has it, else sh) in the container that
+    find(client) returns as (container, display name), and connect it to the WebSocket."""
     await ws.accept()
     c = None
     try:
@@ -805,15 +937,9 @@ async def console(ws: WebSocket, name: str, node_id: str):
         # shared connection's session budget (see POOL_SIZE). Pool of 2: the terminal
         # stream holds one connection for good; resize requests need the other.
         c = await asyncio.to_thread(new_client, 2)
-        topo = _load(name)
-        node = next((n for n in topo.nodes if n.id == node_id), None)
-        if node is None:
-            raise RuntimeError("This node isn't in the saved lab. Save and deploy first.")
-        container = deployer.node_container(c, name, node.id)
-        if container is None:
-            raise RuntimeError(f"{node.name} isn't deployed. Deploy the lab first.")
+        container, label = await asyncio.to_thread(find, c)
         if container.status != "running":
-            raise RuntimeError(f"{node.name} is {container.status}. Start it first.")
+            raise RuntimeError(f"{label} is {container.status}. Start it first.")
         exec_id = c.api.exec_create(container.id, SHELL, stdin=True, tty=True,
                                     environment={"TERM": "xterm-256color"})["Id"]
         sock = c.api.exec_start(exec_id, socket=True, tty=True)
